@@ -1,0 +1,447 @@
+<?php
+// api/controllers/MastersController.php
+
+class MastersController {
+    private $db;
+
+    public function __construct($pdo) {
+        $this->db = $pdo;
+    }
+
+    // 1. COUNTRIES
+    public function getCountries() {
+        $stmt = $this->db->query("SELECT * FROM countries ORDER BY name ASC");
+        Response::success("Countries fetched", $stmt->fetchAll());
+    }
+
+    public function createCountry() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['code'])) {
+            Response::error("Name and code are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO countries (name, code, phone_code, status) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$b['name'], strtoupper($b['code']), $b['phone_code'] ?? null, $b['status'] ?? 'active']);
+        Response::success("Country created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateCountry($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE countries SET name = ?, code = ?, phone_code = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['name'], strtoupper($b['code']), $b['phone_code'] ?? null, $b['status'] ?? 'active', $id]);
+        Response::success("Country updated");
+    }
+
+    public function deleteCountry($id) {
+        $stmt = $this->db->prepare("DELETE FROM countries WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Country deleted");
+    }
+
+    // 2. STATES
+    public function getStates() {
+        $stmt = $this->db->query("
+            SELECT s.*, c.name as country_name 
+            FROM states s 
+            JOIN countries c ON s.country_id = c.id 
+            ORDER BY s.name ASC
+        ");
+        Response::success("States fetched", $stmt->fetchAll());
+    }
+
+    public function createState() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['country_id'])) {
+            Response::error("State name and Country ID are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO states (country_id, name, code, status) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$b['country_id'], $b['name'], $b['code'] ?? null, $b['status'] ?? 'active']);
+        Response::success("State created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateState($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE states SET country_id = ?, name = ?, code = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['country_id'], $b['name'], $b['code'] ?? null, $b['status'] ?? 'active', $id]);
+        Response::success("State updated");
+    }
+
+    public function deleteState($id) {
+        $stmt = $this->db->prepare("DELETE FROM states WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("State deleted");
+    }
+
+    // 3. CITIES
+    public function getCities() {
+        $stmt = $this->db->query("
+            SELECT ct.*, st.name as state_name, co.name as country_name 
+            FROM cities ct 
+            JOIN states st ON ct.state_id = st.id 
+            JOIN countries co ON st.country_id = co.id 
+            ORDER BY ct.name ASC
+        ");
+        Response::success("Cities fetched", $stmt->fetchAll());
+    }
+
+    public function createCity() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['state_id'])) {
+            Response::error("City name and State ID are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO cities (state_id, name, status) VALUES (?, ?, ?)");
+        $stmt->execute([$b['state_id'], $b['name'], $b['status'] ?? 'active']);
+        Response::success("City created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateCity($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE cities SET state_id = ?, name = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['state_id'], $b['name'], $b['status'] ?? 'active', $id]);
+        Response::success("City updated");
+    }
+
+    public function deleteCity($id) {
+        $stmt = $this->db->prepare("DELETE FROM cities WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("City deleted");
+    }
+
+    // 4. COURIERS
+    public function getCouriers() {
+        $stmt = $this->db->query("SELECT * FROM couriers ORDER BY name ASC");
+        Response::success("Couriers fetched", $stmt->fetchAll());
+    }
+
+    public function createCourier() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['code'])) {
+            Response::error("Courier name and code are required");
+        }
+        $stmt = $this->db->prepare("
+            INSERT INTO couriers (name, code, contact_person, phone, email, tracking_url_template, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $b['name'],
+            strtoupper($b['code']),
+            $b['contact_person'] ?? null,
+            $b['phone'] ?? null,
+            $b['email'] ?? null,
+            $b['tracking_url_template'] ?? null,
+            $b['status'] ?? 'active'
+        ]);
+        Response::success("Courier created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateCourier($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("
+            UPDATE couriers 
+            SET name = ?, code = ?, contact_person = ?, phone = ?, email = ?, tracking_url_template = ?, status = ? 
+            WHERE id = ?
+        ");
+        $stmt->execute([
+            $b['name'],
+            strtoupper($b['code']),
+            $b['contact_person'] ?? null,
+            $b['phone'] ?? null,
+            $b['email'] ?? null,
+            $b['tracking_url_template'] ?? null,
+            $b['status'] ?? 'active',
+            $id
+        ]);
+        Response::success("Courier updated");
+    }
+
+    public function deleteCourier($id) {
+        $stmt = $this->db->prepare("DELETE FROM couriers WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Courier deleted");
+    }
+
+    // 5. CUSTOMERS
+    public function getCustomers() {
+        $stmt = $this->db->query("
+            SELECT c.*, ci.name as city_name, st.name as state_name, co.name as country_name 
+            FROM customers c 
+            LEFT JOIN cities ci ON c.city_id = ci.id 
+            LEFT JOIN states st ON c.state_id = st.id 
+            LEFT JOIN countries co ON c.country_id = co.id 
+            ORDER BY c.company_name ASC
+        ");
+        Response::success("Customers fetched", $stmt->fetchAll());
+    }
+
+    public function createCustomer() {
+        $b = Response::getBody();
+        if (empty($b['company_name']) || empty($b['contact_person']) || empty($b['email']) || empty($b['phone'])) {
+            Response::error("Company name, contact person, email and phone are required");
+        }
+        $stmt = $this->db->prepare("
+            INSERT INTO customers (company_name, contact_person, email, phone, gst_number, address, country_id, state_id, city_id, pincode, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $b['company_name'],
+            $b['contact_person'],
+            $b['email'],
+            $b['phone'],
+            $b['gst_number'] ?? null,
+            $b['address'] ?? null,
+            !empty($b['country_id']) ? intval($b['country_id']) : null,
+            !empty($b['state_id']) ? intval($b['state_id']) : null,
+            !empty($b['city_id']) ? intval($b['city_id']) : null,
+            $b['pincode'] ?? null,
+            $b['status'] ?? 'active'
+        ]);
+        Response::success("Customer created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateCustomer($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("
+            UPDATE customers 
+            SET company_name = ?, contact_person = ?, email = ?, phone = ?, gst_number = ?, address = ?, 
+                country_id = ?, state_id = ?, city_id = ?, pincode = ?, status = ? 
+            WHERE id = ?
+        ");
+        $stmt->execute([
+            $b['company_name'],
+            $b['contact_person'],
+            $b['email'],
+            $b['phone'],
+            $b['gst_number'] ?? null,
+            $b['address'] ?? null,
+            !empty($b['country_id']) ? intval($b['country_id']) : null,
+            !empty($b['state_id']) ? intval($b['state_id']) : null,
+            !empty($b['city_id']) ? intval($b['city_id']) : null,
+            $b['pincode'] ?? null,
+            $b['status'] ?? 'active',
+            $id
+        ]);
+        Response::success("Customer updated");
+    }
+
+    public function deleteCustomer($id) {
+        $stmt = $this->db->prepare("DELETE FROM customers WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Customer deleted");
+    }
+
+    // 6. VENDORS
+    public function getVendors() {
+        $stmt = $this->db->query("SELECT * FROM vendors ORDER BY company_name ASC");
+        Response::success("Vendors fetched", $stmt->fetchAll());
+    }
+
+    public function createVendor() {
+        $b = Response::getBody();
+        if (empty($b['company_name']) || empty($b['contact_person']) || empty($b['phone'])) {
+            Response::error("Company name, contact person and phone are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO vendors (company_name, contact_person, email, phone, address, status) VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$b['company_name'], $b['contact_person'], $b['email'] ?? null, $b['phone'], $b['address'] ?? null, $b['status'] ?? 'active']);
+        Response::success("Vendor created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateVendor($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE vendors SET company_name = ?, contact_person = ?, email = ?, phone = ?, address = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['company_name'], $b['contact_person'], $b['email'] ?? null, $b['phone'], $b['address'] ?? null, $b['status'] ?? 'active', $id]);
+        Response::success("Vendor updated");
+    }
+
+    public function deleteVendor($id) {
+        $stmt = $this->db->prepare("DELETE FROM vendors WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Vendor deleted");
+    }
+
+    // 7. PRODUCTS (Finished Goods)
+    public function getProducts() {
+        $stmt = $this->db->query("
+            SELECT p.*, 
+                   (SELECT COUNT(*) FROM product_boms pb WHERE pb.product_id = p.id) as bom_item_count 
+            FROM products p 
+            ORDER BY p.name ASC
+        ");
+        $products = $stmt->fetchAll();
+
+        // Attach Sub-Assemblies & Raw Material BOM breakdown
+        foreach ($products as &$p) {
+            $subStmt = $this->db->prepare("
+                SELECT psa.*, sp.name as sub_product_name, sp.sku as sub_product_sku, sp.uom, sp.current_stock, sp.unit_price as unit_cost, sp.category
+                FROM product_sub_assemblies psa
+                JOIN products sp ON psa.sub_product_id = sp.id
+                WHERE psa.parent_product_id = ?
+            ");
+            $subStmt->execute([$p['id']]);
+            $p['sub_assemblies'] = $subStmt->fetchAll();
+
+            $bomStmt = $this->db->prepare("
+                SELECT pb.*, rm.name as raw_material_name, rm.sku as raw_material_sku, rm.uom, rm.current_stock, rm.unit_cost 
+                FROM product_boms pb 
+                JOIN raw_materials rm ON pb.raw_material_id = rm.id 
+                WHERE pb.product_id = ?
+            ");
+            $bomStmt->execute([$p['id']]);
+            $p['bom'] = $bomStmt->fetchAll();
+        }
+
+        Response::success("Products fetched", $products);
+    }
+
+    public function createProduct() {
+        $b = Response::getBody();
+        if (empty($b['sku']) || empty($b['name'])) {
+            Response::error("Product SKU and Name are required");
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO products (sku, name, description, category, uom, unit_price, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $b['sku'],
+                $b['name'],
+                $b['description'] ?? null,
+                $b['category'] ?? 'Industrial',
+                $b['uom'] ?? 'Units',
+                floatval($b['unit_price'] ?? 0),
+                $b['status'] ?? 'active'
+            ]);
+            $productId = $this->db->lastInsertId();
+
+            if (!empty($b['bom']) && is_array($b['bom'])) {
+                $bStmt = $this->db->prepare("INSERT INTO product_boms (product_id, raw_material_id, quantity_required) VALUES (?, ?, ?)");
+                foreach ($b['bom'] as $item) {
+                    if (!empty($item['raw_material_id']) && !empty($item['quantity_required'])) {
+                        $bStmt->execute([$productId, intval($item['raw_material_id']), floatval($item['quantity_required'])]);
+                    }
+                }
+            }
+
+            $this->db->commit();
+            Response::success("Product created with BOM", ["id" => $productId], 201);
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            Response::error("Failed to create product: " . $e->getMessage());
+        }
+    }
+
+    public function updateProduct($id) {
+        $b = Response::getBody();
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                UPDATE products 
+                SET sku = ?, name = ?, description = ?, category = ?, uom = ?, unit_price = ?, status = ? 
+                WHERE id = ?
+            ");
+            $stmt->execute([
+                $b['sku'],
+                $b['name'],
+                $b['description'] ?? null,
+                $b['category'] ?? 'Industrial',
+                $b['uom'] ?? 'Units',
+                floatval($b['unit_price'] ?? 0),
+                $b['status'] ?? 'active',
+                $id
+            ]);
+
+            if (isset($b['bom']) && is_array($b['bom'])) {
+                $this->db->prepare("DELETE FROM product_boms WHERE product_id = ?")->execute([$id]);
+                $bStmt = $this->db->prepare("INSERT INTO product_boms (product_id, raw_material_id, quantity_required) VALUES (?, ?, ?)");
+                foreach ($b['bom'] as $item) {
+                    if (!empty($item['raw_material_id']) && !empty($item['quantity_required'])) {
+                        $bStmt->execute([$id, intval($item['raw_material_id']), floatval($item['quantity_required'])]);
+                    }
+                }
+            }
+
+            $this->db->commit();
+            Response::success("Product updated successfully");
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            Response::error("Failed to update product: " . $e->getMessage());
+        }
+    }
+
+    public function deleteProduct($id) {
+        $stmt = $this->db->prepare("DELETE FROM products WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Product deleted");
+    }
+
+    // 8. RAW MATERIALS (Inventory Items)
+    public function getRawMaterials() {
+        $stmt = $this->db->query("SELECT * FROM raw_materials ORDER BY name ASC");
+        Response::success("Raw materials fetched", $stmt->fetchAll());
+    }
+
+    public function createRawMaterial() {
+        $b = Response::getBody();
+        if (empty($b['sku']) || empty($b['name'])) {
+            Response::error("Material SKU and Name are required");
+        }
+        $stmt = $this->db->prepare("
+            INSERT INTO raw_materials (sku, name, description, category, uom, current_stock, reorder_level, unit_cost, location, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $b['sku'],
+            $b['name'],
+            $b['description'] ?? null,
+            $b['category'] ?? 'General',
+            $b['uom'] ?? 'Units',
+            floatval($b['current_stock'] ?? 0),
+            floatval($b['reorder_level'] ?? 10),
+            floatval($b['unit_cost'] ?? 0),
+            $b['location'] ?? 'Main Store',
+            $b['status'] ?? 'active'
+        ]);
+        Response::success("Raw material created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateRawMaterial($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("
+            UPDATE raw_materials 
+            SET sku = ?, name = ?, description = ?, category = ?, uom = ?, current_stock = ?, reorder_level = ?, unit_cost = ?, location = ?, status = ? 
+            WHERE id = ?
+        ");
+        $stmt->execute([
+            $b['sku'],
+            $b['name'],
+            $b['description'] ?? null,
+            $b['category'] ?? 'General',
+            $b['uom'] ?? 'Units',
+            floatval($b['current_stock'] ?? 0),
+            floatval($b['reorder_level'] ?? 10),
+            floatval($b['unit_cost'] ?? 0),
+            $b['location'] ?? 'Main Store',
+            $b['status'] ?? 'active',
+            $id
+        ]);
+        Response::success("Raw material updated");
+    }
+
+    public function addStock($id) {
+        $b = Response::getBody();
+        $qty = floatval($b['quantity'] ?? 0);
+        if ($qty <= 0) {
+            Response::error("Valid quantity required to add stock");
+        }
+        $stmt = $this->db->prepare("UPDATE raw_materials SET current_stock = current_stock + ? WHERE id = ?");
+        $stmt->execute([$qty, $id]);
+        Response::success("Stock updated successfully");
+    }
+
+    public function deleteRawMaterial($id) {
+        $stmt = $this->db->prepare("DELETE FROM raw_materials WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Raw material deleted");
+    }
+}

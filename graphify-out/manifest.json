@@ -1,0 +1,307 @@
+{
+  "C:\\xampp\\htdocs\\manufacturing\\database.sql": {
+    "mtime": 1795522313.8343108,
+    "ast_hash": "edbfd1e504392aa8587ad3a2e2e8d467",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\index.php": {
+    "mtime": 1795526197.248475,
+    "ast_hash": "c5d95edcc0ba89b9f20a15e7b55b1ed6",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\config\\database.php": {
+    "mtime": 1795522351.7775784,
+    "ast_hash": "8ff84504e75d55255c8b264de8a4a747",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\AuthController.php": {
+    "mtime": 1795525453.6833818,
+    "ast_hash": "d7b62a2fd3e41258ce96be9c974862c6",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\CustomerPortalController.php": {
+    "mtime": 1795526842.417302,
+    "ast_hash": "5cbd71ee8c4ece9f23ec7f10b8930732",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\DashboardController.php": {
+    "mtime": 1795522568.2004783,
+    "ast_hash": "63b5109d1132a1fb6ecf2ff4b3f1fb06",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\DispatchController.php": {
+    "mtime": 1795526628.854477,
+    "ast_hash": "608b6b8f9b99fd77306fc223b2e4aae9",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\LeadController.php": {
+    "mtime": 1795525482.8437974,
+    "ast_hash": "ec2a3c501d91aec8a03b32040df37f0f",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\ManufacturingController.php": {
+    "mtime": 1795527806.6428118,
+    "ast_hash": "2e53fd63d17fb42c54e02d950a26a82f",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\MastersController.php": {
+    "mtime": 1795527601.2603989,
+    "ast_hash": "30e7bc957c9e3f0ee149d31ab852bc34",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\PaymentController.php": {
+    "mtime": 1795526776.7755156,
+    "ast_hash": "9e3f624358b29c29defb026e4636b308",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\PurchaseOrderController.php": {
+    "mtime": 1795525499.166622,
+    "ast_hash": "0f4e8ac92e4334fc9f8ef624879e134d",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\QualityController.php": {
+    "mtime": 1795527790.7531478,
+    "ast_hash": "14d9edd4ac4a7b03779d397b831e360b",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\QuotationController.php": {
+    "mtime": 1795525494.4561467,
+    "ast_hash": "101f7c669954185223f4b2faba1140ce",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\UserController.php": {
+    "mtime": 1795522382.15547,
+    "ast_hash": "16957f6ec5ce3ebd02973cf8e39f50c8",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\helpers\\response.php": {
+    "mtime": 1795522616.918317,
+    "ast_hash": "01f49e6aba40f03018fba4bf187a9512",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\assets\\index-Dm0bpD4V.js": {
+    "mtime": 1795523323.142654,
+    "ast_hash": "6d61553ff06751020cd72473eaf787ee",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\.oxlintrc.json": {
+    "mtime": 1794665411.541793,
+    "ast_hash": "5e6e3cea3e89137071c142dd7835b0ef",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\package.json": {
+    "mtime": 1795522726.8954859,
+    "ast_hash": "840b9288e12ad797b783e864fad34521",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\postcss.config.js": {
+    "mtime": 1795522742.063029,
+    "ast_hash": "ef3ba2a81ba19f8ea5ddf625521e96f0",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\tailwind.config.js": {
+    "mtime": 1795522721.0281568,
+    "ast_hash": "eea31ef231ddb3f6598e243f4900db46",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\vite.config.js": {
+    "mtime": 1795523294.4774783,
+    "ast_hash": "47107631f9f9628cd3c2b5a3c5455f82",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\App.jsx": {
+    "mtime": 1795527565.2073073,
+    "ast_hash": "41ce6c225ceaa118b65afe30a6d7733f",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\main.jsx": {
+    "mtime": 1794665414.4413621,
+    "ast_hash": "e13723e2574429d9a6d849727e3ff695",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\components\\Navbar.jsx": {
+    "mtime": 1795525649.1930826,
+    "ast_hash": "4460c046a6a3f909840fa4c0441ea1f5",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\components\\PipelineTracker.jsx": {
+    "mtime": 1795525680.7077782,
+    "ast_hash": "c500138dfe37671b8ae5d65701bd8099",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\components\\Sidebar.jsx": {
+    "mtime": 1795525666.1206946,
+    "ast_hash": "d473ecbd7a95a5a84f0c2a36d67029da",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\services\\api.js": {
+    "mtime": 1795526340.790476,
+    "ast_hash": "c269f73ce8280bd6e61caa33c3c0e4e5",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\CustomerPortalView.jsx": {
+    "mtime": 1795526006.6047392,
+    "ast_hash": "cf01c0a17632d7f1d953b2a8fbdc1faf",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\DashboardView.jsx": {
+    "mtime": 1795525709.5789084,
+    "ast_hash": "625f5aacbf2968324bc3a5dbd4c03ea7",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\DispatchView.jsx": {
+    "mtime": 1795525975.6176338,
+    "ast_hash": "d762fcdc7973550f0d9a4faedefc4400",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\LeadsView.jsx": {
+    "mtime": 1795525746.2279215,
+    "ast_hash": "dc9bd0cbc02384492b8102e94362effa",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\ManufacturingView.jsx": {
+    "mtime": 1795527553.8042016,
+    "ast_hash": "3a26f573ff522bf8c418c0f2e76e463b",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\MastersView.jsx": {
+    "mtime": 1795527618.374369,
+    "ast_hash": "ee91274a7d90df9030ed2177d6bc8c84",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\PaymentsView.jsx": {
+    "mtime": 1795525854.6924746,
+    "ast_hash": "67937f675a3b28238ca0eb7226d86353",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\PurchaseOrdersView.jsx": {
+    "mtime": 1795525825.717696,
+    "ast_hash": "140333283fd938638cc22e5f565823b1",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\QualityControlView.jsx": {
+    "mtime": 1795525950.247754,
+    "ast_hash": "71db3174e47e633ac2c6bf290009ceae",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\QuotationsView.jsx": {
+    "mtime": 1795525788.6459694,
+    "ast_hash": "4979163948403a3bc9f3efd7a6672841",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\UsersMatrixView.jsx": {
+    "mtime": 1795526059.6206338,
+    "ast_hash": "730af31fd40fd83fbd9b85516f3ae3e1",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\WorkOrderDetailView.jsx": {
+    "mtime": 1795528059.7751718,
+    "ast_hash": "224fd94077c2c2bfe29bb06a61f3f9a0",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\index.html": {
+    "mtime": 1795528191.4468,
+    "ast_hash": "bec15e826b62f330200f3483b2822843",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\index.html": {
+    "mtime": 1795523312.052798,
+    "ast_hash": "cc8f75dc86b8e4035b1ca5620ed2a30e",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\README.md": {
+    "mtime": 1794665414.4878526,
+    "ast_hash": "75eb386f17caf77fd6fe3ce1d90968ee",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\favicon.svg": {
+    "mtime": 1794665417.324686,
+    "ast_hash": "7e840862161341271697daa99a40d76b",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\icons.svg": {
+    "mtime": 1794665417.681996,
+    "ast_hash": "3b4fcfcf393eca4d264dca4a4663bc37",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\public\\favicon.svg": {
+    "mtime": 1794665417.324686,
+    "ast_hash": "7e840862161341271697daa99a40d76b",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\public\\icons.svg": {
+    "mtime": 1794665417.681996,
+    "ast_hash": "3b4fcfcf393eca4d264dca4a4663bc37",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\assets\\hero.png": {
+    "mtime": 1794665415.1248305,
+    "ast_hash": "aead493361b27e7510691c5d7072dfc1",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\assets\\react.svg": {
+    "mtime": 1794665417.9330611,
+    "ast_hash": "f0402b67b6ce880f65666bb49e841696",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\assets\\vite.svg": {
+    "mtime": 1794665418.6920822,
+    "ast_hash": "9960a24288958394ac50e57ff638b036",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\controllers\\AuditController.php": {
+    "mtime": 1795525441.9215834,
+    "ast_hash": "0a581f0838b30a461a11ef8ae33e19a4",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\api\\helpers\\audit.php": {
+    "mtime": 1795525434.9758153,
+    "ast_hash": "3ae286dca3243746bf3901d4b998ab53",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\assets\\index-Cqysp1Q1.js": {
+    "mtime": 1795526090.1022074,
+    "ast_hash": "395ea4912b786395655460db334b075a",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\utils\\rbac.js": {
+    "mtime": 1795525591.651889,
+    "ast_hash": "1bf2eb6957e895f81c1faac7a6fb69df",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\client\\src\\views\\AuditReportsView.jsx": {
+    "mtime": 1795525623.8915305,
+    "ast_hash": "40e121dc2a912bc8c69612b0bec1516d",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\PROJECT_DOCUMENTATION.md": {
+    "mtime": 1795526111.865394,
+    "ast_hash": "551eab9f80bac24af8bf967ec5e1ceac",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\assets\\index-CLgxXHn5.js": {
+    "mtime": 1795526855.7192907,
+    "ast_hash": "2a3708c73607bfd961d65046ddb80382",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\tests\\e2e_lifecycle_test.php": {
+    "mtime": 1795528169.89099,
+    "ast_hash": "b69c6a741890234d9bf19db30d61cd15",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\database_migration_subproducts.sql": {
+    "mtime": 1795527275.8232982,
+    "ast_hash": "9bb42b1f49a537cb703491b618d9c178",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\assets\\index-BIdPJweY.js": {
+    "mtime": 1795527673.0763395,
+    "ast_hash": "41c161364858318cacddbcecc978bbcb",
+    "semantic_hash": ""
+  },
+  "C:\\xampp\\htdocs\\manufacturing\\assets\\index-Bk6KelHB.js": {
+    "mtime": 1795528191.445051,
+    "ast_hash": "1cfcde362e6fab522aff847a4737d682",
+    "semantic_hash": ""
+  }
+}

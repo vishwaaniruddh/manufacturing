@@ -1,0 +1,208 @@
+<?php
+// api/controllers/CustomerPortalController.php
+
+class CustomerPortalController {
+    private $db;
+
+    public function __construct($pdo) {
+        $this->db = $pdo;
+    }
+
+    /**
+     * Submit Customer Quality Inspection on received dispatch
+     */
+    public function inspectDelivery() {
+        $b = Response::getBody();
+        if (empty($b['dispatch_id']) || empty($b['items']) || !is_array($b['items'])) {
+            Response::error("Dispatch ID and inspection items are required");
+        }
+
+        $dispStmt = $this->db->prepare("SELECT po_id, work_order_id FROM dispatches WHERE id = ?");
+        $dispStmt->execute([$b['dispatch_id']]);
+        $disp = $dispStmt->fetch();
+
+        if (!$disp) {
+            Response::error("Dispatch record not found");
+        }
+
+        $poStmt = $this->db->prepare("SELECT customer_id FROM purchase_orders WHERE id = ?");
+        $poStmt->execute([$disp['po_id']]);
+        $po = $poStmt->fetch();
+
+        $overallStatus = $b['overall_status'] ?? 'accepted_perfect';
+        $inspectedByName = $b['inspected_by_name'] ?? 'Client Inspection Team';
+        $remarks = $b['remarks'] ?? 'Goods received and inspected at site';
+
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO customer_inspections (dispatch_id, po_id, customer_id, inspection_date, inspected_by_name, overall_status, remarks)
+                VALUES (?, ?, ?, CURDATE(), ?, ?, ?)
+            ");
+            $stmt->execute([
+                $b['dispatch_id'],
+                $disp['po_id'],
+                $po['customer_id'],
+                $inspectedByName,
+                $overallStatus,
+                $remarks
+            ]);
+            $inspectionId = $this->db->lastInsertId();
+
+            $itemStmt = $this->db->prepare("
+                INSERT INTO customer_inspection_items (customer_inspection_id, product_id, total_received, perfect_qty, faulty_qty, fault_description, condition_status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+
+            $hasFaulty = false;
+            $faultyDetails = [];
+            foreach ($b['items'] as $item) {
+                $faulty = intval($item['faulty_qty'] ?? $item['rejected_quantity'] ?? 0);
+                $perfect = intval($item['perfect_qty'] ?? $item['accepted_quantity'] ?? 0);
+                $total = intval($item['total_received'] ?? $item['received_quantity'] ?? ($faulty + $perfect));
+                $cond = ($faulty > 0) ? 'faulty' : 'perfect';
+                $desc = $item['fault_description'] ?? $item['defect_details'] ?? null;
+
+                if ($faulty > 0) {
+                    $hasFaulty = true;
+                    $faultyDetails[] = "Product ID {$item['product_id']}: {$faulty} faulty units. " . ($desc ?? '');
+                }
+
+                $itemStmt->execute([
+                    $inspectionId,
+                    intval($item['product_id']),
+                    $total,
+                    $perfect,
+                    $faulty,
+                    $desc,
+                    $cond
+                ]);
+            }
+
+            // Auto-generate Complaint Ticket if customer marked faulty items
+            $ticketNumber = null;
+            $ticketId = null;
+            if ($hasFaulty || $overallStatus !== 'accepted_perfect') {
+                $ticketNumber = 'TKT-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+                $tktStmt = $this->db->prepare("
+                    INSERT INTO complaint_tickets (ticket_number, customer_inspection_id, po_id, customer_id, title, issue_details, severity, return_material_status, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'high', 'requested', 'open')
+                ");
+                $tktStmt->execute([
+                    $ticketNumber,
+                    $inspectionId,
+                    $disp['po_id'],
+                    $po['customer_id'],
+                    'Defective Units Reported during Inward Customer QC',
+                    implode("; ", $faultyDetails) . " " . $remarks
+                ]);
+                $ticketId = $this->db->lastInsertId();
+            }
+
+            $this->db->commit();
+            Audit::log($this->db, 'customer_portal', 'inspect', 'CustomerInspection', (string)$inspectionId, "Customer performed inward QC on Dispatch ID {$b['dispatch_id']}. Result: {$overallStatus}." . ($ticketNumber ? " Defective units flagged. Generated Ticket {$ticketNumber}." : " 100% Perfect."));
+
+            Response::success("Customer inspection recorded successfully", [
+                "inspection_id" => $inspectionId,
+                "overall_status" => $overallStatus,
+                "has_faulty" => $hasFaulty,
+                "ticket_id" => $ticketId,
+                "ticket_number" => $ticketNumber,
+                "complaint_ticket" => $ticketNumber
+            ], 201);
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            Response::error("Failed to record customer inspection: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get all Complaints / RMA tickets
+     */
+    public function getComplaints() {
+        $sql = "
+            SELECT ct.*, po.po_number, po.customer_po_reference, c.company_name as customer_name,
+                   c.contact_person, c.email as customer_email, c.phone as customer_phone
+            FROM complaint_tickets ct
+            JOIN purchase_orders po ON ct.po_id = po.id
+            JOIN customers c ON ct.customer_id = c.id
+            ORDER BY ct.id DESC
+        ";
+        $stmt = $this->db->query($sql);
+        Response::success("Complaints fetched", $stmt->fetchAll());
+    }
+
+    /**
+     * Resolve / Update Complaint Ticket
+     */
+    public function updateComplaint($id) {
+        $b = Response::getBody();
+        $status = $b['status'] ?? 'under_investigation';
+        $returnStatus = $b['return_material_status'] ?? 'requested';
+        $resolutionNotes = $b['resolution_notes'] ?? null;
+
+        $stmt = $this->db->prepare("
+            UPDATE complaint_tickets
+            SET status = ?, return_material_status = ?, resolution_notes = ?
+            WHERE id = ?
+        ");
+        $stmt->execute([$status, $returnStatus, $resolutionNotes, $id]);
+        Response::success("Complaint ticket updated");
+    }
+
+    /**
+     * Release Final Payment
+     */
+    public function releaseFinalPayment() {
+        $b = Response::getBody();
+        $txRef = $b['transaction_reference'] ?? $b['reference_number'] ?? null;
+        if (empty($b['po_id']) || empty($b['amount']) || empty($txRef)) {
+            Response::error("PO ID, payment amount and transaction reference are required");
+        }
+
+        $poStmt = $this->db->prepare("SELECT quotation_id, customer_id, total_amount FROM purchase_orders WHERE id = ?");
+        $poStmt->execute([$b['po_id']]);
+        $po = $poStmt->fetch();
+
+        if (!$po) {
+            Response::error("Purchase order not found");
+        }
+
+        $paymentNumber = 'PAY-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+        $amount = floatval($b['amount']);
+        $method = $b['payment_method'] ?? $b['payment_mode'] ?? 'bank_transfer';
+        $notes = $b['notes'] ?? $b['remarks'] ?? 'Final milestone payment released following satisfactory customer quality check';
+
+        $this->db->beginTransaction();
+        try {
+            $stmt = $this->db->prepare("
+                INSERT INTO payments (payment_number, po_id, quotation_id, customer_id, payment_date, amount,
+                                     payment_method, transaction_reference, payment_type, status, notes)
+                VALUES (?, ?, ?, ?, CURDATE(), ?, ?, ?, 'final', 'verified', ?)
+            ");
+            $stmt->execute([
+                $paymentNumber,
+                $b['po_id'],
+                $po['quotation_id'],
+                $po['customer_id'],
+                $amount,
+                $method,
+                $txRef,
+                $notes
+            ]);
+
+            // Mark PO as completed
+            $this->db->prepare("UPDATE purchase_orders SET status = 'completed' WHERE id = ?")->execute([$b['po_id']]);
+
+            $this->db->commit();
+            Audit::log($this->db, 'payments', 'create', 'Payment', $paymentNumber, "Client released final settlement payment of ₹{$amount} (UTR: {$txRef}) for PO ID {$b['po_id']}. Order Lifecycle Closed.");
+
+            Response::success("Final payment released and verified! Order lifecycle is officially closed.", [
+                "payment_number" => $paymentNumber
+            ]);
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            Response::error("Failed to release final payment: " . $e->getMessage());
+        }
+    }
+}
