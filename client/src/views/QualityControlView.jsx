@@ -6,13 +6,17 @@ import {
   CheckCircle2, 
   XCircle, 
   Search, 
-  History
+  History,
+  Download
 } from 'lucide-react';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function QualityControlView({ currentUser, onInspectWorkOrder, onOpenAudit }) {
   const [inspections, setInspections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   const loadData = async () => {
     setLoading(true);
@@ -30,11 +34,16 @@ export default function QualityControlView({ currentUser, onInspectWorkOrder, on
     loadData();
   }, []);
 
-  const filtered = inspections.filter(i => 
-    i.work_order_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.stage_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    i.inspector_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filtered = inspections.filter(i => {
+    const matchesSearch =
+      i.work_order_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      i.stage_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      i.inspector_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = !statusFilter || i.qc_status === statusFilter;
+    return matchesSearch && matchesStatus;
+  });
+
+  const qcPagination = usePagination(filtered, 10);
 
   return (
     <div className="space-y-3.5">
@@ -65,16 +74,54 @@ export default function QualityControlView({ currentUser, onInspectWorkOrder, on
         )}
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search work order #, stage, or inspector..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-900"
-        />
+      {/* Filter & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search work order #, stage, or inspector..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-900"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-8 px-2.5 text-xs bg-white border border-slate-200 rounded-md text-slate-700"
+          >
+            <option value="">All Verdicts</option>
+            <option value="passed">Passed</option>
+            <option value="failed">Failed</option>
+          </select>
+          <button
+            type="button"
+            onClick={() =>
+              exportToCsv(
+                'qc_inspections',
+                [
+                  { header: 'Level', accessor: (it) => `L${it.level_number}` },
+                  { header: 'Date', accessor: 'inspection_date' },
+                  { header: 'Work Order', accessor: 'work_order_number' },
+                  { header: 'Stage Name', accessor: 'stage_name' },
+                  { header: 'Passed', accessor: 'passed_qty' },
+                  { header: 'Rejected', accessor: 'rejected_qty' },
+                  { header: 'Status', accessor: 'qc_status' },
+                  { header: 'Defect Reason', accessor: 'defect_reason' },
+                  { header: 'Inspector', accessor: 'inspector_name' },
+                  { header: 'Remarks', accessor: 'remarks' }
+                ],
+                filtered
+              )
+            }
+            title="Export filtered QC inspections"
+            className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+          >
+            <Download className="h-3.5 w-3.5" /> Export
+          </button>
+        </div>
       </div>
 
       {/* Table (Compact ShadCN style) */}
@@ -86,10 +133,16 @@ export default function QualityControlView({ currentUser, onInspectWorkOrder, on
             No QC inspections recorded.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Total Records: <strong className="text-slate-800">{filtered.length}</strong></span>
+              <span>Page {qcPagination.currentPage} of {qcPagination.totalPages}</span>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
+                  <th className="px-3 py-2 w-10 text-center">#</th>
                   <th className="px-3.5 py-2">Date & Level</th>
                   <th className="px-3.5 py-2">Work Order</th>
                   <th className="px-3.5 py-2">Stage Name</th>
@@ -100,8 +153,11 @@ export default function QualityControlView({ currentUser, onInspectWorkOrder, on
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filtered.map((item) => (
+                {qcPagination.paginatedItems.map((item, idx) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                      {qcPagination.startIndex + idx + 1}
+                    </td>
                     
                     <td className="px-3.5 py-2 whitespace-nowrap">
                       <span className="font-bold text-slate-900 mr-1.5">L{item.level_number}</span>
@@ -153,6 +209,16 @@ export default function QualityControlView({ currentUser, onInspectWorkOrder, on
               </tbody>
             </table>
           </div>
+          </>
+        )}
+        {!loading && (
+          <Pagination
+            currentPage={qcPagination.currentPage}
+            totalPages={qcPagination.totalPages}
+            totalItems={qcPagination.totalItems}
+            pageSize={qcPagination.pageSize}
+            onPageChange={qcPagination.setCurrentPage}
+          />
         )}
       </div>
 

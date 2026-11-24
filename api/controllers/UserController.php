@@ -122,4 +122,69 @@ class UserController {
             Response::error("Failed to update matrix: " . $e->getMessage());
         }
     }
+
+    // === ROLES CRUD ===
+    public function getRoles() {
+        $stmt = $this->db->query("
+            SELECT r.*, (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id) as user_count
+            FROM roles r
+            ORDER BY r.id ASC
+        ");
+        Response::success("Roles fetched", $stmt->fetchAll());
+    }
+
+    public function createRole() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['slug'])) {
+            Response::error("Role name and slug are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO roles (name, slug, description) VALUES (?, ?, ?)");
+        $stmt->execute([$b['name'], strtolower(trim($b['slug'])), $b['description'] ?? null]);
+        Response::success("Role created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateRole($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE roles SET name = ?, slug = ?, description = ? WHERE id = ?");
+        $stmt->execute([$b['name'], strtolower(trim($b['slug'])), $b['description'] ?? null, $id]);
+        Response::success("Role updated");
+    }
+
+    public function deleteRole($id) {
+        if (intval($id) === 1) {
+            Response::error("Cannot delete primary Administrator role");
+        }
+        $stmt = $this->db->prepare("DELETE FROM roles WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Role deleted");
+    }
+
+    // === PERMISSIONS CRUD ===
+    public function getPermissions() {
+        $stmt = $this->db->query("SELECT * FROM permissions ORDER BY module ASC, id ASC");
+        Response::success("Permissions fetched", $stmt->fetchAll());
+    }
+
+    public function createPermission() {
+        $b = Response::getBody();
+        if (empty($b['module']) || empty($b['action'])) {
+            Response::error("Module and action are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO permissions (module, action, description) VALUES (?, ?, ?)");
+        $stmt->execute([strtolower(trim($b['module'])), strtolower(trim($b['action'])), $b['description'] ?? null]);
+        Response::success("Permission created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updatePermission($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE permissions SET module = ?, action = ?, description = ? WHERE id = ?");
+        $stmt->execute([strtolower(trim($b['module'])), strtolower(trim($b['action'])), $b['description'] ?? null, $id]);
+        Response::success("Permission updated");
+    }
+
+    public function deletePermission($id) {
+        $stmt = $this->db->prepare("DELETE FROM permissions WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Permission deleted");
+    }
 }

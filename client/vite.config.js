@@ -11,6 +11,10 @@ export default defineConfig({
       '/manufacturing/api': {
         target: 'http://localhost',
         changeOrigin: true,
+      },
+      '/manufacturing/uploads': {
+        target: 'http://localhost',
+        changeOrigin: true,
       }
     }
   }

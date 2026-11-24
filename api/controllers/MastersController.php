@@ -39,12 +39,30 @@ class MastersController {
 
     // 2. STATES
     public function getStates() {
-        $stmt = $this->db->query("
+        $countryId = $_GET['country_id'] ?? null;
+        $search = trim($_GET['search'] ?? '');
+        $sql = "
             SELECT s.*, c.name as country_name 
             FROM states s 
             JOIN countries c ON s.country_id = c.id 
-            ORDER BY s.name ASC
-        ");
+            WHERE 1=1
+        ";
+        $params = [];
+        if (!empty($countryId)) {
+            $sql .= " AND s.country_id = ?";
+            $params[] = intval($countryId);
+        }
+        if ($search !== '') {
+            $sql .= " AND (s.name LIKE ? OR c.name LIKE ?)";
+            $params[] = "%{$search}%";
+            $params[] = "%{$search}%";
+        }
+        $sql .= " ORDER BY s.name ASC";
+        if (empty($countryId) && $search === '') {
+            $sql .= " LIMIT 1000";
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
         Response::success("States fetched", $stmt->fetchAll());
     }
 
@@ -73,13 +91,37 @@ class MastersController {
 
     // 3. CITIES
     public function getCities() {
-        $stmt = $this->db->query("
-            SELECT ct.*, st.name as state_name, co.name as country_name 
+        $stateId = $_GET['state_id'] ?? null;
+        $countryId = $_GET['country_id'] ?? null;
+        $search = trim($_GET['search'] ?? '');
+        $sql = "
+            SELECT ct.*, st.name as state_name, st.country_id, co.name as country_name 
             FROM cities ct 
             JOIN states st ON ct.state_id = st.id 
             JOIN countries co ON st.country_id = co.id 
-            ORDER BY ct.name ASC
-        ");
+            WHERE 1=1
+        ";
+        $params = [];
+        if (!empty($stateId)) {
+            $sql .= " AND ct.state_id = ?";
+            $params[] = intval($stateId);
+        }
+        if (!empty($countryId)) {
+            $sql .= " AND st.country_id = ?";
+            $params[] = intval($countryId);
+        }
+        if ($search !== '') {
+            $sql .= " AND (ct.name LIKE ? OR st.name LIKE ? OR co.name LIKE ?)";
+            $params[] = "%{$search}%";
+            $params[] = "%{$search}%";
+            $params[] = "%{$search}%";
+        }
+        $sql .= " ORDER BY ct.name ASC";
+        if (empty($stateId) && $search === '') {
+            $sql .= " LIMIT 500";
+        }
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
         Response::success("Cities fetched", $stmt->fetchAll());
     }
 
@@ -443,5 +485,63 @@ class MastersController {
         $stmt = $this->db->prepare("DELETE FROM raw_materials WHERE id = ?");
         $stmt->execute([$id]);
         Response::success("Raw material deleted");
+    }
+
+    // 9. ZONES
+    public function getZones() {
+        $stmt = $this->db->query("SELECT * FROM zones ORDER BY name ASC");
+        Response::success("Zones fetched", $stmt->fetchAll());
+    }
+
+    public function createZone() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['code'])) {
+            Response::error("Zone name and code are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO zones (name, code, description, status) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$b['name'], strtoupper(trim($b['code'])), $b['description'] ?? null, $b['status'] ?? 'active']);
+        Response::success("Zone created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updateZone($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE zones SET name = ?, code = ?, description = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['name'], strtoupper(trim($b['code'])), $b['description'] ?? null, $b['status'] ?? 'active', $id]);
+        Response::success("Zone updated");
+    }
+
+    public function deleteZone($id) {
+        $stmt = $this->db->prepare("DELETE FROM zones WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Zone deleted");
+    }
+
+    // 10. PAYMENT TYPES
+    public function getPaymentTypes() {
+        $stmt = $this->db->query("SELECT * FROM payment_types ORDER BY id ASC");
+        Response::success("Payment types fetched", $stmt->fetchAll());
+    }
+
+    public function createPaymentType() {
+        $b = Response::getBody();
+        if (empty($b['name']) || empty($b['code'])) {
+            Response::error("Payment type name and code are required");
+        }
+        $stmt = $this->db->prepare("INSERT INTO payment_types (name, code, description, status) VALUES (?, ?, ?, ?)");
+        $stmt->execute([$b['name'], strtolower(trim($b['code'])), $b['description'] ?? null, $b['status'] ?? 'active']);
+        Response::success("Payment type created", ["id" => $this->db->lastInsertId()], 201);
+    }
+
+    public function updatePaymentType($id) {
+        $b = Response::getBody();
+        $stmt = $this->db->prepare("UPDATE payment_types SET name = ?, code = ?, description = ?, status = ? WHERE id = ?");
+        $stmt->execute([$b['name'], strtolower(trim($b['code'])), $b['description'] ?? null, $b['status'] ?? 'active', $id]);
+        Response::success("Payment type updated");
+    }
+
+    public function deletePaymentType($id) {
+        $stmt = $this->db->prepare("DELETE FROM payment_types WHERE id = ?");
+        $stmt->execute([$id]);
+        Response::success("Payment type deleted");
     }
 }

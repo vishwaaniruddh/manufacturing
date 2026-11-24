@@ -7,15 +7,39 @@ import {
   Receipt, 
   CheckCircle2, 
   Calendar, 
-  History
+  History,
+  Search,
+  Download
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import Pagination, { usePagination } from '../components/Pagination';
+import { MediaUploader, MediaGallery } from '../components/MediaUploader';
+import { exportToCsv } from '../utils/exportCsv';
 
-export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }) {
+export default function PaymentsView({ currentUser, preselectedPO, onClearPreselectedPO, onOpenAudit }) {
   const [payments, setPayments] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [paymentTypes, setPaymentTypes] = useState([]);
+  const [paymentMediaMap, setPaymentMediaMap] = useState({});
+  const [paymentMediaFiles, setPaymentMediaFiles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedPOFilter, setSelectedPOFilter] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+
+  const filteredPayments = payments.filter((p) => {
+    const matchesType = !typeFilter || p.payment_type === typeFilter;
+    const s = searchQuery.toLowerCase();
+    const matchesSearch =
+      !s ||
+      p.payment_number?.toLowerCase().includes(s) ||
+      p.customer_name?.toLowerCase().includes(s) ||
+      p.po_number?.toLowerCase().includes(s) ||
+      p.transaction_reference?.toLowerCase().includes(s);
+    return matchesType && matchesSearch;
+  });
+
+  const paymentsPagination = usePagination(filteredPayments, 10);
 
   // Record Payment Modal
   const [showRecordModal, setShowRecordModal] = useState(false);
@@ -32,12 +56,21 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
   const loadData = async () => {
     setLoading(true);
     try {
-      const [pRes, poRes] = await Promise.all([
+      const [pRes, poRes, ptRes, mRes] = await Promise.all([
         api.getPayments(selectedPOFilter),
-        api.getPurchaseOrders()
+        api.getPurchaseOrders(),
+        api.getPaymentTypes(),
+        api.getMedia('payment')
       ]);
       setPayments(pRes.data || []);
       setPurchaseOrders(poRes.data || []);
+      setPaymentTypes((ptRes.data || []).filter((pt) => pt.status === 'active'));
+      const grouped = {};
+      (mRes.data || []).forEach((m) => {
+        grouped[m.entity_id] = grouped[m.entity_id] || [];
+        grouped[m.entity_id].push(m);
+      });
+      setPaymentMediaMap(grouped);
     } catch (err) {
       alert('Error fetching payments: ' + err.message);
     } finally {
@@ -47,16 +80,31 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
 
   useEffect(() => {
     loadData();
-    if (preselectedPO) {
-      setNewPayment(prev => ({
-        ...prev,
-        po_id: preselectedPO.id,
-        amount: Math.round(Number(preselectedPO.balance_due || preselectedPO.total_amount * 0.5)),
-        transaction_reference: `UTR-${Math.floor(100000000 + Math.random() * 900000000)}`
-      }));
-      setShowRecordModal(true);
+  }, [selectedPOFilter]);
+
+  useEffect(() => {
+    if (preselectedPO?.id) {
+      const poIdStr = String(preselectedPO.id);
+      const due = Number(preselectedPO.balance_due ?? preselectedPO.total_amount * 0.5);
+      const paid = Number(preselectedPO.total_paid || 0);
+      setSelectedPOFilter(poIdStr);
+      setNewPayment({
+        po_id: poIdStr,
+        payment_date: new Date().toISOString().split('T')[0],
+        amount: due > 0 ? Math.round(due) : '',
+        payment_method: 'bank_transfer',
+        transaction_reference: `UTR-${Math.floor(100000000 + Math.random() * 900000000)}`,
+        payment_type: paid > 0 ? 'final' : 'advance',
+        notes: ''
+      });
+      if (due > 0) {
+        setShowRecordModal(true);
+      }
+      if (onClearPreselectedPO) {
+        onClearPreselectedPO();
+      }
     }
-  }, [selectedPOFilter, preselectedPO]);
+  }, [preselectedPO]);
 
   const handleRecordSubmit = async (e) => {
     e.preventDefault();
@@ -66,7 +114,12 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
     }
 
     try {
-      await api.recordPayment(newPayment);
+      const payRes = await api.recordPayment(newPayment);
+      const createdPayId = payRes.data?.id;
+      if (paymentMediaFiles.length > 0 && createdPayId) {
+        await api.uploadMedia('payment', createdPayId, paymentMediaFiles, currentUser?.id || 1);
+      }
+      setPaymentMediaFiles([]);
       setShowRecordModal(false);
       setNewPayment({
         po_id: '',
@@ -141,45 +194,101 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
         </div>
       </div>
 
-      {/* Filter by PO */}
-      <div className="flex items-center gap-2 text-xs">
-        <span className="text-slate-500 font-medium">Filter Order:</span>
-        <select
-          value={selectedPOFilter}
-          onChange={(e) => setSelectedPOFilter(e.target.value)}
-          className="py-1 px-2 border border-slate-200 rounded-md text-xs bg-white text-slate-700 font-medium"
+      {/* Filter & Export */}
+      <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[200px]">
+            <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search receipt #, PO #, UTR..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:ring-1 focus:ring-slate-900"
+            />
+          </div>
+          <select
+            value={selectedPOFilter}
+            onChange={(e) => setSelectedPOFilter(e.target.value)}
+            className="h-8 px-2 border border-slate-200 rounded-md text-xs bg-white text-slate-700 font-medium"
+          >
+            <option value="">All Orders</option>
+            {purchaseOrders.map((po) => (
+              <option key={po.id} value={po.id}>{po.po_number}: {po.customer_name}</option>
+            ))}
+          </select>
+          <select
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            className="h-8 px-2 border border-slate-200 rounded-md text-xs bg-white text-slate-700 font-medium"
+          >
+            <option value="">All Payment Types</option>
+            {paymentTypes.map((pt) => (
+              <option key={pt.id} value={pt.code}>{pt.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            exportToCsv(
+              'payments',
+              [
+                { header: 'Receipt #', accessor: 'payment_number' },
+                { header: 'Date', accessor: 'payment_date' },
+                { header: 'PO #', accessor: 'po_number' },
+                { header: 'Customer', accessor: 'customer_name' },
+                { header: 'Amount', accessor: 'amount' },
+                { header: 'Method', accessor: 'payment_method' },
+                { header: 'UTR Reference', accessor: 'transaction_reference' },
+                { header: 'Type', accessor: 'payment_type' },
+                { header: 'Status', accessor: 'status' }
+              ],
+              filteredPayments
+            )
+          }
+          title="Export filtered payments"
+          className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
         >
-          <option value="">All Orders</option>
-          {purchaseOrders.map((po) => (
-            <option key={po.id} value={po.id}>{po.po_number}: {po.customer_name}</option>
-          ))}
-        </select>
+          <Download className="h-3.5 w-3.5" /> Export
+        </button>
       </div>
 
       {/* Table */}
       <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-xs text-slate-500">Loading ledger...</div>
-        ) : payments.length === 0 ? (
+        ) : filteredPayments.length === 0 ? (
           <div className="p-8 text-center text-xs text-slate-400">
             No payments recorded yet.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Total Records: <strong className="text-slate-800">{filteredPayments.length}</strong></span>
+              <span>Page {paymentsPagination.currentPage} of {paymentsPagination.totalPages}</span>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
+                  <th className="px-3 py-2.5 w-10 text-center">#</th>
                   <th className="px-3.5 py-2.5">Receipt # & Date</th>
                   <th className="px-3.5 py-2.5">PO & Client</th>
                   <th className="px-3.5 py-2.5">Amount</th>
                   <th className="px-3.5 py-2.5">Mode & UTR Reference</th>
                   <th className="px-3.5 py-2.5">Type</th>
+                  <th className="px-3.5 py-2.5">Evidence</th>
                   <th className="px-3.5 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {payments.map((p) => (
+                {paymentsPagination.paginatedItems.map((p, idx) => (
                   <tr key={p.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                      {paymentsPagination.startIndex + idx + 1}
+                    </td>
                     
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
@@ -210,6 +319,10 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
                       </span>
                     </td>
 
+                    <td className="px-3.5 py-2.5">
+                      <MediaGallery attachments={paymentMediaMap[p.id] || []} />
+                    </td>
+
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
                         <CheckCircle2 className="h-3 w-3" /> Verified
@@ -221,6 +334,16 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
               </tbody>
             </table>
           </div>
+          </>
+        )}
+        {!loading && (
+          <Pagination
+            currentPage={paymentsPagination.currentPage}
+            totalPages={paymentsPagination.totalPages}
+            totalItems={paymentsPagination.totalItems}
+            pageSize={paymentsPagination.pageSize}
+            onPageChange={paymentsPagination.setCurrentPage}
+          />
         )}
       </div>
 
@@ -274,6 +397,23 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
               </div>
 
               <div>
+                <label className="block font-medium text-slate-700 mb-1">Payment Type *</label>
+                <select
+                  required
+                  value={newPayment.payment_type}
+                  onChange={(e) => setNewPayment({ ...newPayment, payment_type: e.target.value })}
+                  className="w-full p-2 border border-slate-200 rounded-md text-xs focus:ring-1 focus:ring-slate-900"
+                >
+                  <option value="">-- Select Payment Type --</option>
+                  {paymentTypes.map((pt) => (
+                    <option key={pt.id} value={pt.code}>
+                      {pt.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block font-medium text-slate-700 mb-1">UTR Reference # *</label>
                 <input
                   type="text"
@@ -284,6 +424,12 @@ export default function PaymentsView({ currentUser, preselectedPO, onOpenAudit }
                   className="w-full p-2 border border-slate-200 rounded-md text-xs font-mono"
                 />
               </div>
+
+              <MediaUploader
+                files={paymentMediaFiles}
+                onChange={setPaymentMediaFiles}
+                label="Payment Proof / Receipt Screenshots (Optional)"
+              />
 
               <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
                 <button

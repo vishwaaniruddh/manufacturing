@@ -62,11 +62,13 @@ class LeadController {
             Response::error("Customer and Lead Title are required");
         }
 
-        $leadNumber = 'LEAD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+        $leadNumber = !empty($b['lead_number'])
+            ? trim($b['lead_number'])
+            : 'LEAD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
 
         $stmt = $this->db->prepare("
-            INSERT INTO leads (lead_number, customer_id, title, requirement_details, estimated_value, source, status, remarks, assigned_to, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+            INSERT INTO leads (lead_number, customer_id, title, requirement_details, estimated_value, source, priority, expected_close_date, status, remarks, assigned_to, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
         ");
         $stmt->execute([
             $leadNumber,
@@ -75,6 +77,8 @@ class LeadController {
             $b['requirement_details'] ?? null,
             floatval($b['estimated_value'] ?? 0),
             $b['source'] ?? 'Direct Inquiry',
+            $b['priority'] ?? 'medium',
+            !empty($b['expected_close_date']) ? $b['expected_close_date'] : null,
             $b['remarks'] ?? null,
             !empty($b['assigned_to']) ? intval($b['assigned_to']) : null,
             !empty($b['created_by']) ? intval($b['created_by']) : 1
@@ -93,7 +97,7 @@ class LeadController {
         $b = Response::getBody();
         $stmt = $this->db->prepare("
             UPDATE leads
-            SET customer_id = ?, title = ?, requirement_details = ?, estimated_value = ?, source = ?, assigned_to = ?, remarks = ?
+            SET customer_id = ?, title = ?, requirement_details = ?, estimated_value = ?, source = ?, priority = ?, expected_close_date = ?, assigned_to = ?, remarks = ?
             WHERE id = ?
         ");
         $stmt->execute([
@@ -102,12 +106,130 @@ class LeadController {
             $b['requirement_details'] ?? null,
             floatval($b['estimated_value'] ?? 0),
             $b['source'] ?? 'Direct Inquiry',
+            $b['priority'] ?? 'medium',
+            !empty($b['expected_close_date']) ? $b['expected_close_date'] : null,
             !empty($b['assigned_to']) ? intval($b['assigned_to']) : null,
             $b['remarks'] ?? null,
             $id
         ]);
 
         Response::success("Lead updated successfully");
+    }
+
+    public function bulkImport() {
+        $b = Response::getBody();
+        $rows = $b['rows'] ?? [];
+        if (!is_array($rows) || empty($rows)) {
+            Response::error("No lead rows provided for import");
+        }
+
+        $defaultSource = $b['default_source'] ?? 'Excel Import';
+        $defaultPriority = $b['default_priority'] ?? 'medium';
+        $defaultAssignedTo = !empty($b['default_assigned_to']) ? intval($b['default_assigned_to']) : null;
+        $createdBy = !empty($b['created_by']) ? intval($b['created_by']) : 1;
+
+        // Preload customers & users for fast matching
+        $custMap = [];
+        foreach ($this->db->query("SELECT id, company_name FROM customers")->fetchAll() as $c) {
+            $custMap[strtolower(trim($c['company_name']))] = intval($c['id']);
+        }
+        $userMap = [];
+        foreach ($this->db->query("SELECT id, name, email FROM users")->fetchAll() as $u) {
+            $userMap[strtolower(trim($u['name']))] = intval($u['id']);
+            $userMap[strtolower(trim($u['email']))] = intval($u['id']);
+        }
+
+        $insCust = $this->db->prepare("
+            INSERT INTO customers (company_name, contact_person, email, phone, status)
+            VALUES (?, ?, ?, ?, 'active')
+        ");
+        $insLead = $this->db->prepare("
+            INSERT INTO leads (lead_number, customer_id, title, requirement_details, estimated_value, source, priority, expected_close_date, status, remarks, assigned_to, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+        ");
+        $chkLeadNum = $this->db->prepare("SELECT id FROM leads WHERE lead_number = ?");
+
+        $imported = 0;
+        $skipped = 0;
+
+        $this->db->beginTransaction();
+        try {
+            foreach ($rows as $row) {
+                $title = trim((string)($row['title'] ?? $row['lead_name'] ?? ''));
+                if ($title === '') {
+                    $skipped++;
+                    continue;
+                }
+
+                // Resolve or create customer
+                $custId = !empty($row['customer_id']) ? intval($row['customer_id']) : 0;
+                $custName = trim((string)($row['customer_name'] ?? ''));
+                if (!$custId && $custName !== '') {
+                    $key = strtolower($custName);
+                    if (isset($custMap[$key])) {
+                        $custId = $custMap[$key];
+                    } else {
+                        $email = trim((string)($row['customer_email'] ?? '')) ?: ('contact+' . substr(uniqid(), -5) . '@lead-import.local');
+                        $phone = trim((string)($row['customer_phone'] ?? '')) ?: '0000000000';
+                        $insCust->execute([$custName, $custName, $email, $phone]);
+                        $custId = intval($this->db->lastInsertId());
+                        $custMap[$key] = $custId;
+                    }
+                }
+                if (!$custId) {
+                    // Fallback to first customer if none supplied
+                    $custId = intval($this->db->query("SELECT id FROM customers ORDER BY id ASC LIMIT 1")->fetchColumn());
+                }
+
+                $leadNumber = trim((string)($row['lead_number'] ?? ''));
+                if ($leadNumber !== '') {
+                    $chkLeadNum->execute([$leadNumber]);
+                    if ($chkLeadNum->fetch()) {
+                        $leadNumber = $leadNumber . '-' . strtoupper(substr(uniqid(), -3));
+                    }
+                } else {
+                    $leadNumber = 'LEAD-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+                }
+
+                $assigneeId = $defaultAssignedTo;
+                $rawAssignee = strtolower(trim((string)($row['assigned_to'] ?? '')));
+                if ($rawAssignee !== '' && isset($userMap[$rawAssignee])) {
+                    $assigneeId = $userMap[$rawAssignee];
+                }
+
+                $prio = strtolower(trim((string)($row['priority'] ?? $defaultPriority)));
+                if (!in_array($prio, ['low', 'medium', 'high', 'urgent'])) {
+                    $prio = $defaultPriority;
+                }
+
+                $closeDate = !empty($row['expected_close_date']) ? date('Y-m-d', strtotime((string)$row['expected_close_date'])) : null;
+
+                $insLead->execute([
+                    $leadNumber,
+                    $custId,
+                    $title,
+                    $row['requirement_details'] ?? null,
+                    floatval(preg_replace('/[^0-9.\-]/', '', (string)($row['estimated_value'] ?? 0))),
+                    !empty($row['source']) ? trim((string)$row['source']) : $defaultSource,
+                    $prio,
+                    $closeDate,
+                    $row['remarks'] ?? null,
+                    $assigneeId,
+                    $createdBy
+                ]);
+                $imported++;
+            }
+
+            $this->db->commit();
+            Audit::log($this->db, 'leads', 'bulk_import', 'Lead', (string)$imported, "Bulk imported {$imported} leads via Lead Creation Engine (skipped: {$skipped}).");
+            Response::success("Imported {$imported} lead(s) successfully.", [
+                "imported_count" => $imported,
+                "skipped_count" => $skipped
+            ], 201);
+        } catch (Exception $e) {
+            $this->db->rollBack();
+            Response::error("Bulk lead import failed: " . $e->getMessage());
+        }
     }
 
     public function approve($id) {

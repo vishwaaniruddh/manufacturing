@@ -84,10 +84,34 @@ class DispatchController {
     public function updateStatus($id) {
         $b = Response::getBody();
         $status = $b['status'] ?? 'in_transit';
-        $actualDeliveryDate = ($status === 'delivered') ? date('Y-m-d') : null;
+        $actualDeliveryDate = ($status === 'delivered')
+            ? (!empty($b['actual_delivery_date']) ? $b['actual_delivery_date'] : date('Y-m-d'))
+            : null;
+        $lrNumber = !empty($b['lr_number']) ? trim($b['lr_number']) : null;
+        $receivedBy = !empty($b['received_by']) ? trim($b['received_by']) : null;
+        $deliveryRemarks = !empty($b['delivery_remarks']) ? trim($b['delivery_remarks']) : null;
 
-        $stmt = $this->db->prepare("UPDATE dispatches SET status = ?, actual_delivery_date = COALESCE(?, actual_delivery_date) WHERE id = ?");
-        $stmt->execute([$status, $actualDeliveryDate, $id]);
+        $stmt = $this->db->prepare("
+            UPDATE dispatches
+            SET status = ?,
+                actual_delivery_date = COALESCE(?, actual_delivery_date),
+                lr_number = COALESCE(?, lr_number),
+                received_by = COALESCE(?, received_by),
+                delivery_remarks = COALESCE(?, delivery_remarks)
+            WHERE id = ?
+        ");
+        $stmt->execute([$status, $actualDeliveryDate, $lrNumber, $receivedBy, $deliveryRemarks, $id]);
+
+        $dStmt = $this->db->prepare("SELECT dispatch_number FROM dispatches WHERE id = ?");
+        $dStmt->execute([$id]);
+        $disp = $dStmt->fetch();
+        $dispNo = $disp['dispatch_number'] ?? "ID-{$id}";
+        $extra = [];
+        if ($lrNumber) $extra[] = "LR: {$lrNumber}";
+        if ($receivedBy) $extra[] = "Received By: {$receivedBy}";
+        if ($actualDeliveryDate) $extra[] = "Delivered: {$actualDeliveryDate}";
+        $suffix = count($extra) ? ' (' . implode(', ', $extra) . ')' : '';
+        Audit::log($this->db, 'dispatch', 'status_update', 'Dispatch', $dispNo, "Updated dispatch {$dispNo} status to {$status}{$suffix}");
 
         Response::success("Dispatch status updated to: " . $status);
     }

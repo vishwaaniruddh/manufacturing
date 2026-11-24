@@ -12,14 +12,19 @@ import {
   Activity, 
   ArrowUpRight,
   RefreshCw,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Download
 } from 'lucide-react';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function AuditReportsView() {
   const [activeSubTab, setActiveSubTab] = useState('audit'); // 'audit' | 'logins'
   const [auditLogs, setAuditLogs] = useState([]);
   const [logins, setLogins] = useState([]);
   const [loading, setLoading] = useState(true);
+  const auditPagination = usePagination(auditLogs, 10);
+  const loginsPagination = usePagination(logins, 10);
 
   // Filters
   const [selectedModule, setSelectedModule] = useState('');
@@ -127,10 +132,35 @@ export default function AuditReportsView() {
               </select>
 
               <button
+                type="button"
                 onClick={loadData}
                 className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium flex items-center gap-1 shadow-xs"
               >
                 <RefreshCw className="h-3.5 w-3.5" /> Refresh
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  exportToCsv(
+                    'audit_logs',
+                    [
+                      { header: 'Timestamp', accessor: 'created_at' },
+                      { header: 'User', accessor: 'user_name' },
+                      { header: 'Role', accessor: 'role_name' },
+                      { header: 'Module', accessor: 'module' },
+                      { header: 'Action', accessor: 'action' },
+                      { header: 'Entity Ref', accessor: 'entity_id' },
+                      { header: 'Details', accessor: 'details' },
+                      { header: 'IP Address', accessor: 'ip_address' }
+                    ],
+                    auditLogs
+                  )
+                }
+                title="Export filtered audit logs"
+                className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+              >
+                <Download className="h-3.5 w-3.5" /> Export
               </button>
             </div>
           </div>
@@ -144,10 +174,16 @@ export default function AuditReportsView() {
                 No audit entries match the current filters.
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+                  <span>Total Records: <strong className="text-slate-800">{auditLogs.length}</strong></span>
+                  <span>Page {auditPagination.currentPage} of {auditPagination.totalPages}</span>
+                </div>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                     <tr>
+                      <th className="px-3 py-2.5 w-10 text-center">#</th>
                       <th className="px-3.5 py-2.5">Timestamp</th>
                       <th className="px-3.5 py-2.5">User & Role</th>
                       <th className="px-3.5 py-2.5">Module</th>
@@ -158,8 +194,11 @@ export default function AuditReportsView() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {auditLogs.map((log) => (
+                    {auditPagination.paginatedItems.map((log, idx) => (
                       <tr key={log.id} className="hover:bg-slate-50/60 transition-colors">
+                        <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                          {auditPagination.startIndex + idx + 1}
+                        </td>
                         
                         {/* Timestamp */}
                         <td className="px-3.5 py-2.5 whitespace-nowrap text-slate-500 font-mono text-[11px]">
@@ -212,6 +251,16 @@ export default function AuditReportsView() {
                   </tbody>
                 </table>
               </div>
+              </>
+            )}
+            {!loading && (
+              <Pagination
+                currentPage={auditPagination.currentPage}
+                totalPages={auditPagination.totalPages}
+                totalItems={auditPagination.totalItems}
+                pageSize={auditPagination.pageSize}
+                onPageChange={auditPagination.setCurrentPage}
+              />
             )}
           </div>
 
@@ -223,17 +272,38 @@ export default function AuditReportsView() {
         <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
           <div className="p-3 bg-slate-50/80 border-b border-slate-200/80 flex justify-between items-center">
             <h3 className="text-xs font-semibold text-slate-700">
-              User Login, Logout & Session Persona Switch History
+              User Login, Logout & Session Persona Switch History ({logins.length} Records)
             </h3>
-            <span className="text-[11px] text-slate-400">
-              Tracking authentication sessions
-            </span>
+            <button
+              type="button"
+              onClick={() =>
+                exportToCsv(
+                  'login_activity',
+                  [
+                    { header: 'User', accessor: 'user_name' },
+                    { header: 'Email', accessor: 'email' },
+                    { header: 'Role', accessor: 'role_name' },
+                    { header: 'Action', accessor: 'action' },
+                    { header: 'Login Time', accessor: 'login_time' },
+                    { header: 'Logout Time', accessor: 'logout_time' },
+                    { header: 'IP Address', accessor: 'ip_address' },
+                    { header: 'Status', accessor: 'status' }
+                  ],
+                  logins
+                )
+              }
+              title="Export login history"
+              className="h-7 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/50 text-slate-600 font-semibold border-b border-slate-200">
                 <tr>
+                  <th className="px-3 py-2.5 w-10 text-center">#</th>
                   <th className="px-3.5 py-2.5">User Account & Email</th>
                   <th className="px-3.5 py-2.5">Role</th>
                   <th className="px-3.5 py-2.5">Action Event</th>
@@ -244,8 +314,11 @@ export default function AuditReportsView() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {logins.map((entry) => (
+                {loginsPagination.paginatedItems.map((entry, idx) => (
                   <tr key={entry.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                      {loginsPagination.startIndex + idx + 1}
+                    </td>
                     
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <p className="font-medium text-slate-900">{entry.user_name}</p>
@@ -292,6 +365,13 @@ export default function AuditReportsView() {
               </tbody>
             </table>
           </div>
+          <Pagination
+            currentPage={loginsPagination.currentPage}
+            totalPages={loginsPagination.totalPages}
+            totalItems={loginsPagination.totalItems}
+            pageSize={loginsPagination.pageSize}
+            onPageChange={loginsPagination.setCurrentPage}
+          />
         </div>
       )}
 

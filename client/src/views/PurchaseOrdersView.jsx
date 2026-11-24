@@ -9,15 +9,19 @@ import {
   Receipt,
   Eye,
   History,
-  ArrowRight
+  ArrowRight,
+  Download
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCheckMaterials, onRecordPayment, onOpenAudit }) {
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [approvedQuotations, setApprovedQuotations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
 
   // Modals
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -95,11 +99,16 @@ export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCh
     }
   };
 
-  const filteredPOs = purchaseOrders.filter(po => 
-    po.po_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.customer_po_reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    po.customer_name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPOs = purchaseOrders.filter(po => {
+    const matchesSearch =
+      po.po_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      po.customer_po_reference.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      po.customer_name?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesPayment = !paymentStatusFilter || po.payment_status === paymentStatusFilter;
+    return matchesSearch && matchesPayment;
+  });
+
+  const poPagination = usePagination(filteredPOs, 10);
 
   return (
     <div className="space-y-3.5">
@@ -141,16 +150,54 @@ export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCh
         </div>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-        <input
-          type="text"
-          placeholder="Search PO #, client ref, or customer..."
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
-        />
+      {/* Filter & Search */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search PO #, client ref, or customer..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:ring-1 focus:ring-slate-900"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={paymentStatusFilter}
+            onChange={(e) => setPaymentStatusFilter(e.target.value)}
+            className="h-8 px-2.5 text-xs bg-white border border-slate-200 rounded-md text-slate-700"
+          >
+            <option value="">All Payment Statuses</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="partially_paid">Partially Paid</option>
+            <option value="fully_paid">Fully Paid</option>
+          </select>
+          <button
+            type="button"
+            onClick={() =>
+              exportToCsv(
+                'purchase_orders',
+                [
+                  { header: 'PO #', accessor: 'po_number' },
+                  { header: 'Client Ref', accessor: 'customer_po_reference' },
+                  { header: 'Customer', accessor: 'customer_name' },
+                  { header: 'Order Total', accessor: 'total_amount' },
+                  { header: 'Total Paid', accessor: 'total_paid' },
+                  { header: 'Balance Due', accessor: 'balance_due' },
+                  { header: 'Payment Status', accessor: 'payment_status' },
+                  { header: 'Deadline', accessor: 'delivery_deadline' },
+                  { header: 'Status', accessor: 'status' }
+                ],
+                filteredPOs
+              )
+            }
+            title="Export filtered purchase orders"
+            className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+          >
+            <Download className="h-3.5 w-3.5" /> Export
+          </button>
+        </div>
       </div>
 
       {/* Table (Compact ShadCN style) */}
@@ -162,10 +209,16 @@ export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCh
             No purchase orders recorded yet.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Total Records: <strong className="text-slate-800">{filteredPOs.length}</strong></span>
+              <span>Page {poPagination.currentPage} of {poPagination.totalPages}</span>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
+                  <th className="px-3 py-2.5 w-10 text-center">#</th>
                   <th className="px-3.5 py-2.5">PO # & Client Ref</th>
                   <th className="px-3.5 py-2.5">Customer</th>
                   <th className="px-3.5 py-2.5">Order Total</th>
@@ -176,8 +229,11 @@ export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCh
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredPOs.map((po) => (
+                {poPagination.paginatedItems.map((po, idx) => (
                   <tr key={po.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                      {poPagination.startIndex + idx + 1}
+                    </td>
                     
                     <td className="px-3.5 py-2.5 whitespace-nowrap">
                       <span className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
@@ -261,6 +317,16 @@ export default function PurchaseOrdersView({ currentUser, preselectedQuote, onCh
               </tbody>
             </table>
           </div>
+          </>
+        )}
+        {!loading && (
+          <Pagination
+            currentPage={poPagination.currentPage}
+            totalPages={poPagination.totalPages}
+            totalItems={poPagination.totalItems}
+            pageSize={poPagination.pageSize}
+            onPageChange={poPagination.setCurrentPage}
+          />
         )}
       </div>
 

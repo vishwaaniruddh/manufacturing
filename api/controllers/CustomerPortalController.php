@@ -83,7 +83,15 @@ class CustomerPortalController {
             $ticketNumber = null;
             $ticketId = null;
             if ($hasFaulty || $overallStatus !== 'accepted_perfect') {
-                $ticketNumber = 'TKT-' . date('Y') . '-' . strtoupper(substr(uniqid(), -5));
+                $ts5 = substr((string)time(), -5);
+                $ticketNumber = 'TKT_' . date('Ymd') . $ts5;
+                // Ensure uniqueness if multiple tickets are generated in the same second
+                $chk = $this->db->prepare("SELECT id FROM complaint_tickets WHERE ticket_number = ?");
+                $chk->execute([$ticketNumber]);
+                if ($chk->fetch()) {
+                    $ticketNumber = 'TKT_' . date('Ymd') . str_pad((string)mt_rand(0, 99999), 5, '0', STR_PAD_LEFT);
+                }
+
                 $tktStmt = $this->db->prepare("
                     INSERT INTO complaint_tickets (ticket_number, customer_inspection_id, po_id, customer_id, title, issue_details, severity, return_material_status, status)
                     VALUES (?, ?, ?, ?, ?, ?, 'high', 'requested', 'open')
@@ -122,31 +130,96 @@ class CustomerPortalController {
     public function getComplaints() {
         $sql = "
             SELECT ct.*, po.po_number, po.customer_po_reference, c.company_name as customer_name,
-                   c.contact_person, c.email as customer_email, c.phone as customer_phone
+                   c.contact_person, c.email as customer_email, c.phone as customer_phone,
+                   u.name as assigned_to_name, r.name as assigned_to_role
             FROM complaint_tickets ct
             JOIN purchase_orders po ON ct.po_id = po.id
             JOIN customers c ON ct.customer_id = c.id
+            LEFT JOIN users u ON ct.assigned_to = u.id
+            LEFT JOIN roles r ON u.role_id = r.id
             ORDER BY ct.id DESC
         ";
         $stmt = $this->db->query($sql);
         Response::success("Complaints fetched", $stmt->fetchAll());
     }
 
+    public function createComplaint() {
+        $b = Response::getBody();
+        if (empty($b['po_id']) || empty($b['title']) || empty($b['issue_details'])) {
+            Response::error("PO ID, title, and issue details are required");
+        }
+
+        $poStmt = $this->db->prepare("SELECT customer_id FROM purchase_orders WHERE id = ?");
+        $poStmt->execute([intval($b['po_id'])]);
+        $po = $poStmt->fetch();
+        if (!$po) {
+            Response::error("Purchase order not found");
+        }
+
+        $ts5 = substr((string)time(), -5);
+        $ticketNumber = 'TKT_' . date('Ymd') . $ts5;
+        $chk = $this->db->prepare("SELECT id FROM complaint_tickets WHERE ticket_number = ?");
+        $chk->execute([$ticketNumber]);
+        if ($chk->fetch()) {
+            $ticketNumber = 'TKT_' . date('Ymd') . str_pad((string)mt_rand(0, 99999), 5, '0', STR_PAD_LEFT);
+        }
+
+        $stmt = $this->db->prepare("
+            INSERT INTO complaint_tickets (ticket_number, po_id, customer_id, title, issue_details, severity, return_material_status, status, assigned_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'open', ?)
+        ");
+        $stmt->execute([
+            $ticketNumber,
+            intval($b['po_id']),
+            $po['customer_id'],
+            $b['title'],
+            $b['issue_details'],
+            $b['severity'] ?? 'medium',
+            $b['return_material_status'] ?? 'requested',
+            !empty($b['assigned_to']) ? intval($b['assigned_to']) : null
+        ]);
+        $id = $this->db->lastInsertId();
+        Audit::log($this->db, 'customer_portal', 'create_ticket', 'ComplaintTicket', $ticketNumber, "Created ticket {$ticketNumber}: {$b['title']}");
+        Response::success("Ticket created successfully", ["id" => $id, "ticket_number" => $ticketNumber], 201);
+    }
+
     /**
-     * Resolve / Update Complaint Ticket
+     * Resolve / Update / Assign Complaint Ticket
      */
     public function updateComplaint($id) {
         $b = Response::getBody();
-        $status = $b['status'] ?? 'under_investigation';
-        $returnStatus = $b['return_material_status'] ?? 'requested';
-        $resolutionNotes = $b['resolution_notes'] ?? null;
+        $fields = [];
+        $params = [];
 
-        $stmt = $this->db->prepare("
-            UPDATE complaint_tickets
-            SET status = ?, return_material_status = ?, resolution_notes = ?
-            WHERE id = ?
-        ");
-        $stmt->execute([$status, $returnStatus, $resolutionNotes, $id]);
+        if (isset($b['status'])) {
+            $fields[] = "status = ?";
+            $params[] = $b['status'];
+        }
+        if (isset($b['return_material_status'])) {
+            $fields[] = "return_material_status = ?";
+            $params[] = $b['return_material_status'];
+        }
+        if (array_key_exists('resolution_notes', $b)) {
+            $fields[] = "resolution_notes = ?";
+            $params[] = $b['resolution_notes'];
+        }
+        if (array_key_exists('assigned_to', $b)) {
+            $fields[] = "assigned_to = ?";
+            $params[] = !empty($b['assigned_to']) ? intval($b['assigned_to']) : null;
+        }
+
+        if (empty($fields)) {
+            Response::error("No fields to update");
+        }
+
+        $params[] = $id;
+        $stmt = $this->db->prepare("UPDATE complaint_tickets SET " . implode(", ", $fields) . " WHERE id = ?");
+        $stmt->execute($params);
+
+        if (array_key_exists('assigned_to', $b)) {
+            Audit::log($this->db, 'customer_portal', 'assign_ticket', 'ComplaintTicket', (string)$id, "Assigned ticket ID {$id} to user ID " . ($b['assigned_to'] ?: 'Unassigned'));
+        }
+
         Response::success("Complaint ticket updated");
     }
 

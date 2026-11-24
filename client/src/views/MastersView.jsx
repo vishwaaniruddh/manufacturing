@@ -8,8 +8,11 @@ import {
   Users, 
   Boxes, 
   Package, 
-  Plus
+  Plus,
+  Download
 } from 'lucide-react';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function MastersView() {
   const [activeSubTab, setActiveSubTab] = useState('customers');
@@ -22,6 +25,10 @@ export default function MastersView() {
   const [countries, setCountries] = useState([]);
   const [states, setStates] = useState([]);
   const [cities, setCities] = useState([]);
+
+  const customersPagination = usePagination(customers, 10);
+  const rawMaterialsPagination = usePagination(rawMaterials, 10);
+  const couriersPagination = usePagination(couriers, 10);
 
   // Quick stock addition
   const [addingStockId, setAddingStockId] = useState(null);
@@ -118,12 +125,33 @@ export default function MastersView() {
       {/* 1. CUSTOMERS TAB */}
       {activeSubTab === 'customers' && (
         <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700">
-            Customer Accounts ({customers.length})
+          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700 flex items-center justify-between">
+            <span>Customer Accounts ({customers.length})</span>
+            <button
+              type="button"
+              onClick={() =>
+                exportToCsv(
+                  'masters_customers',
+                  [
+                    { header: 'Company', accessor: 'company_name' },
+                    { header: 'Contact Person', accessor: 'contact_person' },
+                    { header: 'Email', accessor: 'email' },
+                    { header: 'Phone', accessor: 'phone' },
+                    { header: 'GST #', accessor: 'gst_number' },
+                    { header: 'Status', accessor: 'status' }
+                  ],
+                  customers
+                )
+              }
+              className="h-7 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-[11px] font-medium inline-flex items-center gap-1"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
           </div>
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/50 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
+                <th className="px-3 py-2 w-10 text-center">#</th>
                 <th className="px-3.5 py-2">Company & Contact</th>
                 <th className="px-3.5 py-2">Email & Phone</th>
                 <th className="px-3.5 py-2">GST #</th>
@@ -132,8 +160,11 @@ export default function MastersView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {customers.map((c) => (
+              {customersPagination.paginatedItems.map((c, idx) => (
                 <tr key={c.id} className="hover:bg-slate-50/60">
+                  <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                    {customersPagination.startIndex + idx + 1}
+                  </td>
                   <td className="px-3.5 py-2">
                     <p className="font-semibold text-slate-900">{c.company_name}</p>
                     <p className="text-[10px] text-slate-400">{c.contact_person}</p>
@@ -155,6 +186,13 @@ export default function MastersView() {
               ))}
             </tbody>
           </table>
+          <Pagination
+            currentPage={customersPagination.currentPage}
+            totalPages={customersPagination.totalPages}
+            totalItems={customersPagination.totalItems}
+            pageSize={customersPagination.pageSize}
+            onPageChange={customersPagination.setCurrentPage}
+          />
         </div>
       )}
 
@@ -226,12 +264,33 @@ export default function MastersView() {
       {/* 3. RAW MATERIALS & STOCK */}
       {activeSubTab === 'raw_materials' && (
         <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700">
-            Warehouse Raw Material Stock
+          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700 flex items-center justify-between">
+            <span>Warehouse Raw Material Stock</span>
+            <button
+              type="button"
+              onClick={() =>
+                exportToCsv(
+                  'masters_raw_materials',
+                  [
+                    { header: 'SKU', accessor: 'sku' },
+                    { header: 'Material', accessor: 'name' },
+                    { header: 'Location', accessor: 'location' },
+                    { header: 'Current Stock', accessor: 'current_stock' },
+                    { header: 'Reorder Level', accessor: 'reorder_level' },
+                    { header: 'Unit Cost', accessor: 'unit_cost' }
+                  ],
+                  rawMaterials
+                )
+              }
+              className="h-7 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-[11px] font-medium inline-flex items-center gap-1"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
           </div>
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/50 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
+                <th className="px-3 py-2 w-10 text-center">#</th>
                 <th className="px-3.5 py-2">Material SKU & Name</th>
                 <th className="px-3.5 py-2">Location</th>
                 <th className="px-3.5 py-2 text-center">Current Stock</th>
@@ -241,8 +300,11 @@ export default function MastersView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {rawMaterials.map((rm) => (
+              {rawMaterialsPagination.paginatedItems.map((rm, idx) => (
                 <tr key={rm.id} className="hover:bg-slate-50/60">
+                  <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                    {rawMaterialsPagination.startIndex + idx + 1}
+                  </td>
                   <td className="px-3.5 py-2">
                     <p className="font-semibold text-slate-900">{rm.name}</p>
                     <span className="font-mono text-[10px] text-slate-400">{rm.sku}</span>
@@ -294,18 +356,45 @@ export default function MastersView() {
               ))}
             </tbody>
           </table>
+          <Pagination
+            currentPage={rawMaterialsPagination.currentPage}
+            totalPages={rawMaterialsPagination.totalPages}
+            totalItems={rawMaterialsPagination.totalItems}
+            pageSize={rawMaterialsPagination.pageSize}
+            onPageChange={rawMaterialsPagination.setCurrentPage}
+          />
         </div>
       )}
 
       {/* 4. COURIERS */}
       {activeSubTab === 'couriers' && (
         <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
-          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700">
-            Courier & Logistics Carriers
+          <div className="p-2.5 bg-slate-50/80 border-b border-slate-200 text-xs font-semibold text-slate-700 flex items-center justify-between">
+            <span>Courier & Logistics Carriers</span>
+            <button
+              type="button"
+              onClick={() =>
+                exportToCsv(
+                  'masters_couriers',
+                  [
+                    { header: 'Name', accessor: 'name' },
+                    { header: 'Code', accessor: 'code' },
+                    { header: 'Contact Person', accessor: 'contact_person' },
+                    { header: 'Phone', accessor: 'phone' },
+                    { header: 'Status', accessor: 'status' }
+                  ],
+                  couriers
+                )
+              }
+              className="h-7 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded text-[11px] font-medium inline-flex items-center gap-1"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
           </div>
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/50 text-slate-600 border-b border-slate-200 font-semibold">
               <tr>
+                <th className="px-3 py-2 w-10 text-center">#</th>
                 <th className="px-3.5 py-2">Courier Name & Code</th>
                 <th className="px-3.5 py-2">Contact & Phone</th>
                 <th className="px-3.5 py-2">Tracking URL Pattern</th>
@@ -313,8 +402,11 @@ export default function MastersView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {couriers.map((c) => (
+              {couriersPagination.paginatedItems.map((c, idx) => (
                 <tr key={c.id}>
+                  <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                    {couriersPagination.startIndex + idx + 1}
+                  </td>
                   <td className="px-3.5 py-2 font-semibold text-slate-900">{c.name} ({c.code})</td>
                   <td className="px-3.5 py-2 text-slate-600">{c.contact_person} • {c.phone}</td>
                   <td className="px-3.5 py-2 font-mono text-[10px] text-slate-400">{c.tracking_url_template}</td>
@@ -323,6 +415,13 @@ export default function MastersView() {
               ))}
             </tbody>
           </table>
+          <Pagination
+            currentPage={couriersPagination.currentPage}
+            totalPages={couriersPagination.totalPages}
+            totalItems={couriersPagination.totalItems}
+            pageSize={couriersPagination.pageSize}
+            onPageChange={couriersPagination.setCurrentPage}
+          />
         </div>
       )}
 

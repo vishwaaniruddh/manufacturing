@@ -8,12 +8,16 @@ import {
   Save, 
   Trash2,
   Shield,
-  History
+  History,
+  Download
 } from 'lucide-react';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function UsersMatrixView({ onOpenAudit }) {
   const [activeTab, setActiveTab] = useState('users');
   const [users, setUsers] = useState([]);
+  const usersPagination = usePagination(users, 10);
   const [roles, setRoles] = useState([]);
   const [permissions, setPermissions] = useState([]);
   const [matrixMap, setMatrixMap] = useState({});
@@ -163,12 +167,34 @@ export default function UsersMatrixView({ onOpenAudit }) {
           </div>
 
           {activeTab === 'users' && (
-            <button
-              onClick={() => setShowUserModal(true)}
-              className="h-8 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium text-xs shadow-xs flex items-center gap-1.5"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add Staff User
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() =>
+                  exportToCsv(
+                    'staff_users',
+                    [
+                      { header: 'Name', accessor: 'name' },
+                      { header: 'Email', accessor: 'email' },
+                      { header: 'Phone', accessor: 'phone' },
+                      { header: 'Role', accessor: 'role_name' },
+                      { header: 'Status', accessor: 'status' }
+                    ],
+                    users
+                  )
+                }
+                title="Export users"
+                className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+              >
+                <Download className="h-3.5 w-3.5" /> Export
+              </button>
+              <button
+                onClick={() => setShowUserModal(true)}
+                className="h-8 px-3 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium text-xs shadow-xs flex items-center gap-1.5"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add Staff User
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -176,9 +202,15 @@ export default function UsersMatrixView({ onOpenAudit }) {
       {/* TAB 1: USERS DIRECTORY */}
       {activeTab === 'users' && (
         <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
-          <table className="w-full text-left text-xs">
+          <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+            <span>Total Records: <strong className="text-slate-800">{usersPagination.totalItems}</strong></span>
+            <span>Page {usersPagination.currentPage} of {usersPagination.totalPages}</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/50 text-slate-600 font-semibold border-b border-slate-200">
               <tr>
+                <th className="px-3 py-2 w-10 text-center">#</th>
                 <th className="px-3.5 py-2">Name & Email</th>
                 <th className="px-3.5 py-2">Phone</th>
                 <th className="px-3.5 py-2">Assigned Role</th>
@@ -187,8 +219,11 @@ export default function UsersMatrixView({ onOpenAudit }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {users.map((u) => (
+              {usersPagination.paginatedItems.map((u, idx) => (
                 <tr key={u.id} className="hover:bg-slate-50/60">
+                  <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                    {usersPagination.startIndex + idx + 1}
+                  </td>
                   <td className="px-3.5 py-2.5">
                     <p className="font-semibold text-slate-900">{u.name}</p>
                     <p className="text-[10px] text-slate-400 font-mono">{u.email}</p>
@@ -217,7 +252,15 @@ export default function UsersMatrixView({ onOpenAudit }) {
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
+          <Pagination
+            currentPage={usersPagination.currentPage}
+            totalPages={usersPagination.totalPages}
+            totalItems={usersPagination.totalItems}
+            pageSize={usersPagination.pageSize}
+            onPageChange={usersPagination.setCurrentPage}
+          />
         </div>
       )}
 

@@ -6,6 +6,10 @@
   body {
     @apply bg-slate-50 text-slate-900 font-sans antialiased;
   }
+
+  th {
+    white-space: nowrap;
+  }
 }
 
 /* Custom Scrollbar */
@@ -22,4 +26,27 @@
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Thin auto-hiding sidebar scrollbar */
+.sidebar-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  overscroll-behavior: contain;
+}
+.sidebar-scroll.is-scrolling {
+  scrollbar-color: rgba(148, 163, 184, 0.5) transparent;
+}
+.sidebar-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+.sidebar-scroll.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
 }

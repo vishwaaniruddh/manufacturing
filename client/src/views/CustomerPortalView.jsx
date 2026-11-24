@@ -9,14 +9,36 @@ import {
   ThumbsUp, 
   ThumbsDown,
   Sparkles,
-  History
+  History,
+  Search,
+  Download
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import Pagination, { usePagination } from '../components/Pagination';
+import { MediaUploader, MediaGallery } from '../components/MediaUploader';
+import { exportToCsv } from '../utils/exportCsv';
 
 export default function CustomerPortalView({ currentUser, preselectedDispatch, onPaymentReleased, onOpenAudit }) {
   const [dispatches, setDispatches] = useState([]);
   const [complaints, setComplaints] = useState([]);
+  const [assignableUsers, setAssignableUsers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [complaintSearch, setComplaintSearch] = useState('');
+  const [complaintStatusFilter, setComplaintStatusFilter] = useState('');
+
+  const filteredComplaints = complaints.filter((c) => {
+    const matchesStatus = !complaintStatusFilter || c.status === complaintStatusFilter;
+    const s = complaintSearch.toLowerCase();
+    const matchesSearch =
+      !s ||
+      c.ticket_number?.toLowerCase().includes(s) ||
+      c.title?.toLowerCase().includes(s) ||
+      c.issue_details?.toLowerCase().includes(s) ||
+      c.assigned_to_name?.toLowerCase().includes(s);
+    return matchesStatus && matchesSearch;
+  });
+
+  const complaintsPagination = usePagination(filteredComplaints, 10);
 
   // Inward Inspection Modal
   const [showInspectionModal, setShowInspectionModal] = useState(false);
@@ -26,6 +48,8 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
   const [faultyCount, setFaultyCount] = useState(0);
   const [faultDescription, setFaultDescription] = useState('');
   const [overallRemarks, setOverallRemarks] = useState('');
+  const [inspectMediaFiles, setInspectMediaFiles] = useState([]);
+  const [complaintMediaMap, setComplaintMediaMap] = useState({});
   const [submittingInspect, setSubmittingInspect] = useState(false);
 
   // Final Payment Modal
@@ -38,12 +62,33 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
   const loadData = async () => {
     setLoading(true);
     try {
-      const [dRes, cRes] = await Promise.all([
+      const [dRes, cRes, mRes, uRes] = await Promise.all([
         api.getDispatches(),
-        api.getComplaints()
+        api.getComplaints(),
+        api.getMedia('customer_inspection'),
+        api.getUsers()
       ]);
       setDispatches(dRes.data || []);
       setComplaints(cRes.data || []);
+      setAssignableUsers(
+        (uRes.data || []).filter((u) => {
+          const slug = (u.role_slug || '').toLowerCase();
+          const roleName = (u.role_name || '').toLowerCase();
+          return (
+            slug === 'sales' ||
+            slug === 'production' ||
+            slug === 'admin' ||
+            roleName.includes('manager') ||
+            roleName.includes('sales')
+          );
+        })
+      );
+      const grouped = {};
+      (mRes.data || []).forEach((m) => {
+        grouped[m.entity_id] = grouped[m.entity_id] || [];
+        grouped[m.entity_id].push(m);
+      });
+      setComplaintMediaMap(grouped);
     } catch (err) {
       alert('Error fetching customer portal data: ' + err.message);
     } finally {
@@ -65,6 +110,7 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
     setFaultyCount(0);
     setFaultDescription('');
     setOverallRemarks('Goods arrived in intact outer packaging. Verified functional performance at factory site.');
+    setInspectMediaFiles([]);
     setShowInspectionModal(true);
   };
 
@@ -92,7 +138,11 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
       };
 
       const res = await api.inspectDelivery(payload);
+      if (inspectMediaFiles.length > 0 && selectedDispatch?.id) {
+        await api.uploadMedia('customer_inspection', selectedDispatch.id, inspectMediaFiles, currentUser?.id || 1);
+      }
       alert(res.message + (res.data?.complaint_ticket ? `\nAuto-generated Complaint RMA Ticket: ${res.data.complaint_ticket}` : ''));
+      setInspectMediaFiles([]);
       setShowInspectionModal(false);
       loadData();
     } catch (err) {
@@ -129,6 +179,15 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
       alert('Failed to release final payment: ' + err.message);
     } finally {
       setReleasingPayment(false);
+    }
+  };
+
+  const handleAssignTicket = async (ticketId, userId) => {
+    try {
+      await api.updateComplaint(ticketId, { assigned_to: userId || null });
+      loadData();
+    } catch (err) {
+      alert('Failed to assign ticket: ' + err.message);
     }
   };
 
@@ -185,36 +244,39 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
         </div>
 
         {dispatches.map((d) => (
-          <div key={d.id} className="p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+          <div key={d.id} className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="inline-block whitespace-nowrap shrink-0 font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                   {d.dispatch_number}
                 </span>
                 <span className="font-semibold text-slate-900 text-xs">{d.product_name}</span>
               </div>
-              <p className="text-[11px] text-slate-500 mt-0.5">
+              <p className="text-[11px] text-slate-500 mt-0.5 break-words">
                 Client: {d.customer_name} • Carrier: {d.courier_name} ({d.tracking_number}) • Challan: {d.delivery_challan_no}
               </p>
             </div>
 
-            <div className="flex items-center gap-2 self-end sm:self-auto">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               {hasPermission(currentUser, 'customer_portal', 'inspect') && (
                 <button
+                  type="button"
                   onClick={() => openInspection(d)}
-                  className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-[11px] font-medium flex items-center gap-1"
+                  className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-md text-[11px] font-medium inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <PackageCheck className="h-3 w-3" />
-                  {d.customer_inspected > 0 ? 'Re-Inspect' : 'Client QC Check'}
+                  <PackageCheck className="h-3 w-3 shrink-0" />
+                  <span>{d.customer_inspected > 0 ? 'Re-Inspect' : 'Client QC Check'}</span>
                 </button>
               )}
 
               {hasPermission(currentUser, 'payments', 'create') && (
                 <button
+                  type="button"
                   onClick={() => openPaymentRelease(d)}
-                  className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-[11px] font-medium flex items-center gap-1"
+                  className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-[11px] font-medium inline-flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                 >
-                  <Sparkles className="h-3 w-3" /> Release Final Pay
+                  <Sparkles className="h-3 w-3 shrink-0" />
+                  <span>Release Final Pay</span>
                 </button>
               )}
             </div>
@@ -224,31 +286,80 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
 
       {/* RMA Complaint Tickets */}
       <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
-        <div className="p-3 bg-slate-50/80 border-b border-slate-200 flex justify-between items-center text-xs">
+        <div className="p-3 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
           <span className="font-semibold text-rose-700 flex items-center gap-1.5">
-            <AlertTriangle className="h-3.5 w-3.5" /> RMA Complaint Tickets & Defect Return Requests
+            <AlertTriangle className="h-3.5 w-3.5" /> RMA Complaint Tickets & Defect Return Requests ({filteredComplaints.length})
           </span>
-          <span className="text-rose-600 font-medium">{complaints.length} Tickets</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="h-3 w-3 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search ticket #, issue, assignee..."
+                value={complaintSearch}
+                onChange={(e) => setComplaintSearch(e.target.value)}
+                className="pl-7 pr-2.5 py-1 text-xs bg-white border border-slate-200 rounded-md"
+              />
+            </div>
+            <select
+              value={complaintStatusFilter}
+              onChange={(e) => setComplaintStatusFilter(e.target.value)}
+              className="py-1 px-2 text-xs bg-white border border-slate-200 rounded-md text-slate-700"
+            >
+              <option value="">All Statuses</option>
+              <option value="open">Open</option>
+              <option value="under_investigation">Under Investigation</option>
+              <option value="resolved">Resolved</option>
+            </select>
+            <button
+              type="button"
+              onClick={() =>
+                exportToCsv(
+                  'rma_complaints',
+                  [
+                    { header: 'Ticket #', accessor: 'ticket_number' },
+                    { header: 'Title', accessor: 'title' },
+                    { header: 'Issue Details', accessor: 'issue_details' },
+                    { header: 'RMA Return Status', accessor: 'return_material_status' },
+                    { header: 'Assigned To', accessor: (c) => c.assigned_to_name || 'Unassigned' },
+                    { header: 'Status', accessor: 'status' }
+                  ],
+                  filteredComplaints
+                )
+              }
+              title="Export filtered tickets"
+              className="h-7 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+            >
+              <Download className="h-3 w-3" /> Export
+            </button>
+          </div>
         </div>
 
-        {complaints.length === 0 ? (
+        {filteredComplaints.length === 0 ? (
           <div className="p-6 text-center text-xs text-slate-400">
             No active complaints. All customer deliveries accepted as 100% Perfect!
           </div>
         ) : (
-          <table className="w-full text-left text-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
             <thead className="bg-slate-50/50 text-slate-600 border-b border-slate-200 font-semibold">
               <tr>
+                <th className="px-3 py-2 w-10 text-center">#</th>
                 <th className="px-3.5 py-2">Ticket #</th>
                 <th className="px-3.5 py-2">Customer & Issue</th>
                 <th className="px-3.5 py-2">RMA Return Status</th>
+                <th className="px-3.5 py-2">Assigned To</th>
+                <th className="px-3.5 py-2">Evidence</th>
                 <th className="px-3.5 py-2">Status</th>
                 <th className="px-3.5 py-2 text-right">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {complaints.map((c) => (
+              {complaintsPagination.paginatedItems.map((c, idx) => (
                 <tr key={c.id} className="hover:bg-slate-50/60">
+                  <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                    {complaintsPagination.startIndex + idx + 1}
+                  </td>
                   <td className="px-3.5 py-2 font-mono font-semibold text-rose-700">{c.ticket_number}</td>
                   <td className="px-3.5 py-2">
                     <p className="font-semibold text-slate-900">{c.title}</p>
@@ -258,26 +369,57 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
                     {c.return_material_status?.replace('_', ' ')}
                   </td>
                   <td className="px-3.5 py-2">
+                    <select
+                      aria-label={`Assign ticket ${c.ticket_number}`}
+                      value={c.assigned_to || ''}
+                      onChange={(e) => handleAssignTicket(c.id, e.target.value)}
+                      className="p-1 border border-slate-200 rounded text-[11px] bg-white text-slate-700 max-w-[165px]"
+                    >
+                      <option value="">-- Unassigned --</option>
+                      {assignableUsers.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} ({u.role_name})
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="px-3.5 py-2">
+                    <MediaGallery attachments={complaintMediaMap[c.dispatch_id] || complaintMediaMap[c.id] || []} />
+                  </td>
+                  <td className="px-3.5 py-2">
                     <span className={`px-1.5 py-0.2 rounded text-[10px] font-semibold uppercase ${
                       c.status === 'resolved' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700'
                     }`}>
                       {c.status}
                     </span>
                   </td>
-                  <td className="px-3.5 py-2 text-right">
-                    {c.status !== 'resolved' && (currentUser?.role_id === 1 || currentUser?.role_slug === 'admin' || currentUser?.role_slug === 'qc') && (
-                      <button
-                        onClick={() => handleResolveTicket(c.id)}
-                        className="h-6 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-medium"
-                      >
-                        Resolve & Replace
-                      </button>
-                    )}
+                  <td className="px-3.5 py-2 text-right whitespace-nowrap">
+                    <button
+                      type="button"
+                      disabled={
+                        c.status === 'resolved' ||
+                        !(currentUser?.role_id === 1 || currentUser?.role_slug === 'admin' || currentUser?.role_slug === 'qc')
+                      }
+                      onClick={() => handleResolveTicket(c.id)}
+                      className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[11px] font-medium whitespace-nowrap disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Resolve &amp; Replace
+                    </button>
                   </td>
                 </tr>
               ))}
             </tbody>
-          </table>
+            </table>
+          </div>
+        )}
+        {!loading && (
+          <Pagination
+            currentPage={complaintsPagination.currentPage}
+            totalPages={complaintsPagination.totalPages}
+            totalItems={complaintsPagination.totalItems}
+            pageSize={complaintsPagination.pageSize}
+            onPageChange={complaintsPagination.setCurrentPage}
+          />
         )}
       </div>
 
@@ -341,6 +483,12 @@ export default function CustomerPortalView({ currentUser, preselectedDispatch, o
                   className="w-full p-1.5 border border-slate-200 rounded text-xs"
                 />
               </div>
+
+              <MediaUploader
+                files={inspectMediaFiles}
+                onChange={setInspectMediaFiles}
+                label="Inspection / Defect Evidence (Photos, Videos, Docs)"
+              />
 
               <div className="flex justify-end space-x-2 pt-2 border-t border-slate-100">
                 <button

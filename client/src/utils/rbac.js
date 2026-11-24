@@ -33,9 +33,11 @@ export function canAccessTab(user, tabId) {
       return true; // Dashboard KPI view is accessible with filtered context
 
     case 'leads':
+    case 'lead_engine':
       return hasPermission(user, 'leads');
 
     case 'quotations':
+    case 'quotation_detail':
       return hasPermission(user, 'quotations');
 
     case 'purchase_orders':
@@ -45,7 +47,9 @@ export function canAccessTab(user, tabId) {
       return hasPermission(user, 'payments');
 
     case 'mrp':
-      return hasPermission(user, 'inventory') || hasPermission(user, 'manufacturing');
+    case 'inventory_products':
+    case 'inventory_raw_materials':
+      return hasPermission(user, 'inventory') || hasPermission(user, 'manufacturing') || hasPermission(user, 'masters');
 
     case 'manufacturing':
     case 'work_order_detail':
@@ -58,6 +62,7 @@ export function canAccessTab(user, tabId) {
       return hasPermission(user, 'dispatch');
 
     case 'customer_portal':
+    case 'tickets':
       return hasPermission(user, 'customer_portal');
 
     case 'masters':
@@ -65,6 +70,20 @@ export function canAccessTab(user, tabId) {
 
     case 'users_matrix':
       return hasPermission(user, 'users');
+
+    case 'superadmin':
+    case 'superadmin_users':
+    case 'superadmin_roles':
+    case 'superadmin_permissions':
+    case 'superadmin_access':
+    case 'superadmin_city':
+    case 'superadmin_state':
+    case 'superadmin_country':
+    case 'superadmin_zone':
+    case 'superadmin_couriers':
+    case 'superadmin_payment_types':
+    case 'superadmin_customers':
+      return hasPermission(user, 'users') || hasPermission(user, 'masters');
 
     case 'audit_reports':
       // Admin, QC, Accounts, or any role with audit access

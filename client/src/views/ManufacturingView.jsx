@@ -12,12 +12,22 @@ import {
   Hammer, 
   ArrowRight,
   RefreshCw,
-  History
+  History,
+  Download
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
-export default function ManufacturingView({ currentUser, initialPO, onViewWorkOrder, onOpenAudit }) {
-  const [subTab, setSubTab] = useState('lookup');
+export default function ManufacturingView({
+  currentUser,
+  mode = 'manufacturing',
+  initialPO,
+  onViewWorkOrder,
+  onOpenAudit,
+  onNavigateTab
+}) {
+  const [subTab, setSubTab] = useState(() => (mode === 'mrp' || initialPO?.id ? 'lookup' : 'work_orders'));
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [workOrders, setWorkOrders] = useState([]);
   const [requisitions, setRequisitions] = useState([]);
@@ -27,6 +37,23 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
   const [selectedPOId, setSelectedPOId] = useState(initialPO?.id || '');
   const [lookupResult, setLookupResult] = useState(null);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [bomSearch, setBomSearch] = useState('');
+  const [bomAvailabilityFilter, setBomAvailabilityFilter] = useState('');
+
+  const filteredSubAssemblies = (lookupResult?.sub_assemblies || []).filter((sub) => {
+    const matchesSearch = !bomSearch || sub.name?.toLowerCase().includes(bomSearch.toLowerCase()) || sub.sku?.toLowerCase().includes(bomSearch.toLowerCase());
+    const matchesAvail = !bomAvailabilityFilter || (bomAvailabilityFilter === 'available' ? sub.is_available : !sub.is_available);
+    return matchesSearch && matchesAvail;
+  });
+
+  const filteredMaterials = (lookupResult?.materials || []).filter((m) => {
+    const matchesSearch = !bomSearch || m.name?.toLowerCase().includes(bomSearch.toLowerCase()) || m.sku?.toLowerCase().includes(bomSearch.toLowerCase());
+    const matchesAvail = !bomAvailabilityFilter || (bomAvailabilityFilter === 'available' ? m.is_available : !m.is_available);
+    return matchesSearch && matchesAvail;
+  });
+
+  const subAssembliesPagination = usePagination(filteredSubAssemblies, 10);
+  const materialsPagination = usePagination(filteredMaterials, 10);
 
   // Requisition
   const [requisitionRemarks, setRequisitionRemarks] = useState('');
@@ -61,9 +88,26 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
   useEffect(() => {
     if (initialPO?.id) {
       setSelectedPOId(initialPO.id);
+      setSubTab('lookup');
       handleCheckMaterials(initialPO.id);
     }
   }, [initialPO]);
+
+  useEffect(() => {
+    if (!initialPO?.id) {
+      setSubTab(mode === 'mrp' ? 'lookup' : 'work_orders');
+    }
+  }, [mode]);
+
+  const handleSelectSubTab = (nextSubTab) => {
+    setSubTab(nextSubTab);
+    if (onNavigateTab) {
+      const targetMode = nextSubTab === 'work_orders' ? 'manufacturing' : 'mrp';
+      if (targetMode !== mode) {
+        onNavigateTab(targetMode);
+      }
+    }
+  };
 
   const handleCheckMaterials = async (poId) => {
     const idToUse = poId || selectedPOId;
@@ -179,31 +223,35 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
         <div>
           <div className="flex items-center gap-2">
             <h1 className="text-base font-semibold text-slate-900 tracking-tight">
-              Stage 7 & 8: Inventory BOM Lookup & 5-Level Manufacturing
+              {mode === 'mrp'
+                ? 'Stage 7: BOM Inventory Check & Material Requisitions'
+                : 'Stage 8: 5-Level Manufacturing & Work Orders'}
             </h1>
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">
-              Floor Operations
+              {mode === 'mrp' ? 'Inventory & MRP' : 'Floor Operations'}
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            BOM stock explosion against warehouse inventory. Requisition missing materials or start production floor jobs.
+            {mode === 'mrp'
+              ? 'Explode Purchase Order BOMs against warehouse stock and raise shortfall material requisitions.'
+              : 'Track active 5-level production work orders, operator assignments, and floor progress.'}
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           {onOpenAudit && (
             <button
-              onClick={() => onOpenAudit('manufacturing')}
+              onClick={() => onOpenAudit(mode === 'mrp' ? 'inventory' : 'manufacturing')}
               className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium flex items-center gap-1 shadow-xs"
             >
-              <History className="h-3.5 w-3.5" /> Floor Audit Trail
+              <History className="h-3.5 w-3.5" /> {mode === 'mrp' ? 'MRP Audit Trail' : 'Floor Audit Trail'}
             </button>
           )}
 
           {/* Subtabs */}
           <div className="flex bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
             <button
-              onClick={() => setSubTab('lookup')}
+              onClick={() => handleSelectSubTab('lookup')}
               className={`px-2.5 py-1 rounded font-medium transition-colors ${
                 subTab === 'lookup' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
@@ -211,7 +259,7 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
               BOM Check
             </button>
             <button
-              onClick={() => setSubTab('requisitions')}
+              onClick={() => handleSelectSubTab('requisitions')}
               className={`px-2.5 py-1 rounded font-medium transition-colors ${
                 subTab === 'requisitions' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
@@ -219,7 +267,7 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
               Requisitions ({requisitions.length})
             </button>
             <button
-              onClick={() => setSubTab('work_orders')}
+              onClick={() => handleSelectSubTab('work_orders')}
               className={`px-2.5 py-1 rounded font-medium transition-colors ${
                 subTab === 'work_orders' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
@@ -331,15 +379,53 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                         Multi-Level BOM ({lookupResult.sub_assemblies.length} Sub-Products)
                       </span>
                     </div>
-                    <span className="text-[11px] text-slate-500 font-medium">
-                      {lookupResult.available_sub_assemblies_count} of {lookupResult.total_sub_assemblies_count} ready in stock
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <input
+                        type="text"
+                        placeholder="Filter BOM..."
+                        value={bomSearch}
+                        onChange={(e) => setBomSearch(e.target.value)}
+                        className="h-7 px-2 text-xs bg-white border border-slate-200 rounded-md"
+                      />
+                      <select
+                        value={bomAvailabilityFilter}
+                        onChange={(e) => setBomAvailabilityFilter(e.target.value)}
+                        className="h-7 px-2 text-xs bg-white border border-slate-200 rounded-md text-slate-700"
+                      >
+                        <option value="">All Status</option>
+                        <option value="available">Ready / Available</option>
+                        <option value="shortage">Shortage</option>
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          exportToCsv(
+                            'bom_sub_assemblies',
+                            [
+                              { header: 'Name', accessor: 'name' },
+                              { header: 'SKU', accessor: 'sku' },
+                              { header: 'Category', accessor: 'category' },
+                              { header: 'Required', accessor: (s) => `${s.total_required} ${s.uom}` },
+                              { header: 'In Stock', accessor: (s) => `${s.current_stock} ${s.uom}` },
+                              { header: 'Shortfall', accessor: (s) => `${s.shortfall} ${s.uom}` },
+                              { header: 'Unit Cost', accessor: 'unit_cost' },
+                              { header: 'Shortfall Cost', accessor: 'shortfall_cost' }
+                            ],
+                            filteredSubAssemblies
+                          )
+                        }
+                        className="h-7 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1"
+                      >
+                        <Download className="h-3 w-3" /> Export
+                      </button>
+                    </div>
                   </div>
 
                   <div className="bg-white rounded-lg border border-indigo-100 shadow-xs overflow-hidden">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-indigo-50/60 text-slate-700 font-semibold border-b border-indigo-100">
                         <tr>
+                          <th className="px-3 py-2 w-10 text-center">#</th>
                           <th className="px-3.5 py-2">Sub-Product / Component Name</th>
                           <th className="px-3.5 py-2">Module Role / Spec</th>
                           <th className="px-3.5 py-2 text-center">Required</th>
@@ -351,8 +437,11 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-indigo-50">
-                        {lookupResult.sub_assemblies.map((sub) => (
+                        {subAssembliesPagination.paginatedItems.map((sub, idx) => (
                           <tr key={sub.sub_product_id} className="hover:bg-indigo-50/20">
+                            <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                              {subAssembliesPagination.startIndex + idx + 1}
+                            </td>
                             <td className="px-3.5 py-2">
                               <p className="font-semibold text-slate-900">{sub.name}</p>
                               <span className="font-mono text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.2 rounded border border-indigo-100">
@@ -395,6 +484,13 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                         ))}
                       </tbody>
                     </table>
+                    <Pagination
+                      currentPage={subAssembliesPagination.currentPage}
+                      totalPages={subAssembliesPagination.totalPages}
+                      totalItems={subAssembliesPagination.totalItems}
+                      pageSize={subAssembliesPagination.pageSize}
+                      onPageChange={subAssembliesPagination.setCurrentPage}
+                    />
                   </div>
                 </div>
               )}
@@ -411,8 +507,29 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                       Inventory Items ({lookupResult.materials?.length || 0})
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-500 font-medium">
+                  <span className="text-[11px] text-slate-500 font-medium flex items-center gap-2">
                     {lookupResult.available_materials_count} of {lookupResult.total_materials_count} materials available
+                    <button
+                      type="button"
+                      onClick={() =>
+                        exportToCsv(
+                          'bom_raw_materials',
+                          [
+                            { header: 'Name', accessor: 'name' },
+                            { header: 'SKU', accessor: 'sku' },
+                            { header: 'Required', accessor: (m) => `${m.total_required} ${m.uom}` },
+                            { header: 'In Stock', accessor: (m) => `${m.current_stock} ${m.uom}` },
+                            { header: 'Shortfall', accessor: (m) => `${m.shortfall} ${m.uom}` },
+                            { header: 'Unit Cost', accessor: 'unit_cost' },
+                            { header: 'Shortfall Cost', accessor: 'shortfall_cost' }
+                          ],
+                          filteredMaterials
+                        )
+                      }
+                      className="h-7 px-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1"
+                    >
+                      <Download className="h-3 w-3" /> Export
+                    </button>
                   </span>
                 </div>
 
@@ -420,6 +537,7 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200">
                       <tr>
+                        <th className="px-3 py-2 w-10 text-center">#</th>
                         <th className="px-3.5 py-2">Material SKU & Name</th>
                         <th className="px-3.5 py-2 text-center">Required</th>
                         <th className="px-3.5 py-2 text-center">In Stock</th>
@@ -430,8 +548,11 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {lookupResult.materials?.map((m) => (
+                      {materialsPagination.paginatedItems.map((m, idx) => (
                         <tr key={m.raw_material_id} className="hover:bg-slate-50/60">
+                          <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">
+                            {materialsPagination.startIndex + idx + 1}
+                          </td>
                           <td className="px-3.5 py-2">
                             <p className="font-semibold text-slate-900">{m.name}</p>
                             <span className="font-mono text-[10px] text-slate-400">{m.sku}</span>
@@ -462,6 +583,13 @@ export default function ManufacturingView({ currentUser, initialPO, onViewWorkOr
                       ))}
                     </tbody>
                   </table>
+                  <Pagination
+                    currentPage={materialsPagination.currentPage}
+                    totalPages={materialsPagination.totalPages}
+                    totalItems={materialsPagination.totalItems}
+                    pageSize={materialsPagination.pageSize}
+                    onPageChange={materialsPagination.setCurrentPage}
+                  />
                 </div>
               </div>
 

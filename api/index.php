@@ -17,6 +17,7 @@ require_once __DIR__ . '/controllers/QualityController.php';
 require_once __DIR__ . '/controllers/DispatchController.php';
 require_once __DIR__ . '/controllers/CustomerPortalController.php';
 require_once __DIR__ . '/controllers/DashboardController.php';
+require_once __DIR__ . '/controllers/MediaController.php';
 
 // Initialize CORS & options headers
 Response::initCors();
@@ -39,6 +40,7 @@ $dispatchCtrl = new DispatchController($pdo);
 $customerCtrl = new CustomerPortalController($pdo);
 $dashboardCtrl = new DashboardController($pdo);
 $auditCtrl = new AuditController($pdo);
+$mediaCtrl = new MediaController($pdo);
 
 // Determine route and method
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -87,6 +89,18 @@ try {
             if ($actionOrId === 'matrix') {
                 if ($method === 'GET') $userCtrl->getPermissionMatrix();
                 elseif ($method === 'POST') $userCtrl->updatePermissionMatrix();
+            } elseif ($actionOrId === 'roles') {
+                $id = $subAction;
+                if ($method === 'GET') $userCtrl->getRoles();
+                elseif ($method === 'POST') $userCtrl->createRole();
+                elseif ($method === 'PUT' && !empty($id)) $userCtrl->updateRole($id);
+                elseif ($method === 'DELETE' && !empty($id)) $userCtrl->deleteRole($id);
+            } elseif ($actionOrId === 'permissions') {
+                $id = $subAction;
+                if ($method === 'GET') $userCtrl->getPermissions();
+                elseif ($method === 'POST') $userCtrl->createPermission();
+                elseif ($method === 'PUT' && !empty($id)) $userCtrl->updatePermission($id);
+                elseif ($method === 'DELETE' && !empty($id)) $userCtrl->deletePermission($id);
             } elseif ($method === 'GET') {
                 $userCtrl->getAll();
             } elseif ($method === 'POST') {
@@ -152,6 +166,16 @@ try {
                 } elseif ($method === 'DELETE') {
                     $mastersCtrl->deleteRawMaterial($id);
                 }
+            } elseif ($master === 'zones') {
+                if ($method === 'GET') $mastersCtrl->getZones();
+                elseif ($method === 'POST') $mastersCtrl->createZone();
+                elseif ($method === 'PUT') $mastersCtrl->updateZone($id);
+                elseif ($method === 'DELETE') $mastersCtrl->deleteZone($id);
+            } elseif ($master === 'payment_types') {
+                if ($method === 'GET') $mastersCtrl->getPaymentTypes();
+                elseif ($method === 'POST') $mastersCtrl->createPaymentType();
+                elseif ($method === 'PUT') $mastersCtrl->updatePaymentType($id);
+                elseif ($method === 'DELETE') $mastersCtrl->deletePaymentType($id);
             } else {
                 Response::error("Unknown master resource", 404);
             }
@@ -163,6 +187,8 @@ try {
                 $leadCtrl->approve($subAction);
             } elseif ($actionOrId === 'reject' && $method === 'POST') {
                 $leadCtrl->reject($subAction);
+            } elseif ($actionOrId === 'import' && $method === 'POST') {
+                $leadCtrl->bulkImport();
             } elseif ($method === 'GET') {
                 if (!empty($actionOrId) && is_numeric($actionOrId)) {
                     $leadCtrl->getOne($actionOrId);
@@ -188,7 +214,13 @@ try {
                 $quotationCtrl->reject($subAction);
             } elseif ($method === 'GET') {
                 if (!empty($actionOrId) && is_numeric($actionOrId)) {
-                    $quotationCtrl->getOne($actionOrId);
+                    if ($subAction === 'pdf') {
+                        $quotationCtrl->downloadPdf($actionOrId);
+                    } elseif ($subAction === 'excel') {
+                        $quotationCtrl->downloadExcel($actionOrId);
+                    } else {
+                        $quotationCtrl->getOne($actionOrId);
+                    }
                 } else {
                     $quotationCtrl->getAll();
                 }
@@ -291,6 +323,8 @@ try {
             } elseif ($actionOrId === 'complaints') {
                 if ($method === 'GET') {
                     $customerCtrl->getComplaints();
+                } elseif ($method === 'POST') {
+                    $customerCtrl->createComplaint();
                 } elseif ($method === 'PUT' && !empty($subAction)) {
                     $customerCtrl->updateComplaint($subAction);
                 }
@@ -298,6 +332,19 @@ try {
                 $customerCtrl->releaseFinalPayment();
             } else {
                 Response::error("Unknown customer portal endpoint", 404);
+            }
+            break;
+
+        // === MEDIA ATTACHMENTS ===
+        case 'media':
+            if ($actionOrId === 'upload' && $method === 'POST') {
+                $mediaCtrl->upload();
+            } elseif ($method === 'GET') {
+                $mediaCtrl->listByEntity();
+            } elseif ($method === 'DELETE' && !empty($actionOrId)) {
+                $mediaCtrl->delete($actionOrId);
+            } else {
+                Response::error("Method not supported for media", 405);
             }
             break;
 

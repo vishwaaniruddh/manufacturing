@@ -1,5 +1,5 @@
 // client/src/components/Sidebar.jsx
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   UserCheck,
@@ -14,110 +14,372 @@ import {
   Database,
   ShieldCheck,
   History,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  Users,
+  KeyRound,
+  Lock,
+  MapPin,
+  Globe,
+  Compass,
+  Building2,
+  Wallet,
+  Package,
+  Ticket,
+  Sparkles
 } from 'lucide-react';
 import { canAccessTab } from '../utils/rbac';
 
-export default function Sidebar({ currentUser, activeTab, setActiveTab, counts = {} }) {
+const SA_USER_IDS = new Set([
+  'superadmin_users',
+  'superadmin_roles',
+  'superadmin_permissions',
+  'superadmin_access'
+]);
+
+const SA_LOCATION_IDS = new Set([
+  'superadmin_city',
+  'superadmin_state',
+  'superadmin_country',
+  'superadmin_zone'
+]);
+
+function getSectionKeyForTab(tabId, navSections) {
+  if (tabId && tabId.startsWith('superadmin_')) {
+    return 'superadmin';
+  }
+  const found = navSections.find((sec) => sec.items.some((it) => it.id === tabId));
+  return found ? found.key : 'sales';
+}
+
+function getSubgroupForTab(tabId) {
+  if (SA_USER_IDS.has(tabId)) return 'sa_users';
+  if (SA_LOCATION_IDS.has(tabId)) return 'sa_location';
+  return null;
+}
+
+export default function Sidebar({
+  currentUser,
+  activeTab,
+  setActiveTab,
+  counts = {},
+  mobileOpen = false,
+  onCloseMobile
+}) {
   const navSections = [
     {
+      key: 'sales',
       title: 'Sales & Commercial',
       items: [
         { id: 'dashboard', label: 'Dashboard Overview', icon: LayoutDashboard },
-        { id: 'leads', label: '1 & 2. Leads Inward & Approval', icon: UserCheck, badge: counts.leads },
-        { id: 'quotations', label: '3. Commercial Quotations', icon: FileSpreadsheet, badge: counts.quotations },
-        { id: 'purchase_orders', label: '4. Customer Sales POs', icon: FileCheck2, badge: counts.pos },
-        { id: 'payments', label: '5 & 12. Client Payments', icon: CreditCard, badge: counts.payments },
+        { id: 'leads', label: 'Leads Inward & Approval', icon: UserCheck, badge: counts.leads },
+        { id: 'lead_engine', label: 'Lead Creation Engine', icon: Sparkles },
+        { id: 'quotations', label: 'Commercial Quotations', icon: FileSpreadsheet, badge: counts.quotations },
+        { id: 'purchase_orders', label: 'Customer Sales POs', icon: FileCheck2, badge: counts.pos },
+        { id: 'payments', label: 'Client Payments', icon: CreditCard, badge: counts.payments }
       ]
     },
     {
+      key: 'production',
       title: 'Production & Logistics',
       items: [
-        { id: 'mrp', label: '7. BOM Inventory & Requisitions', icon: Boxes, badge: counts.requisitions },
-        { id: 'manufacturing', label: '8. 5-Level Manufacturing', icon: Hammer, badge: counts.workOrders },
-        { id: 'qc', label: '9. Quality Control Gates', icon: ClipboardCheck, badge: counts.qc },
-        { id: 'dispatch', label: '10. Dispatch & Logistics', icon: Truck, badge: counts.dispatches },
+        { id: 'mrp', label: 'BOM Inventory & Requisitions', icon: Boxes, badge: counts.requisitions },
+        { id: 'manufacturing', label: '5-Level Manufacturing', icon: Hammer, badge: counts.workOrders },
+        { id: 'qc', label: 'Quality Control Gates', icon: ClipboardCheck, badge: counts.qc },
+        { id: 'dispatch', label: 'Dispatch & Logistics', icon: Truck, badge: counts.dispatches }
       ]
     },
     {
+      key: 'inventory',
+      title: 'Inventory',
+      items: [
+        { id: 'inventory_products', label: 'Products & BOM', icon: Package },
+        { id: 'inventory_raw_materials', label: 'Raw Materials & Stock', icon: Boxes }
+      ]
+    },
+    {
+      key: 'quality_claims',
       title: 'Client Quality & Claims',
       items: [
-        { id: 'customer_portal', label: '11. Customer Inward QC & RMA', icon: AlertTriangle, badge: counts.complaints },
+        { id: 'customer_portal', label: 'Customer Inward QC & RMA', icon: AlertTriangle, badge: counts.complaints },
+        { id: 'tickets', label: 'Ticketing Engine', icon: Ticket, badge: counts.complaints }
       ]
     },
     {
+      key: 'governance',
       title: 'Governance & Auditing',
       items: [
         { id: 'audit_reports', label: 'Audit Reports & Session Logs', icon: History },
         { id: 'masters', label: 'Master Data Hub', icon: Database },
-        { id: 'users_matrix', label: 'Users & RBAC Matrix', icon: ShieldCheck },
+        { id: 'users_matrix', label: 'Users & RBAC Matrix', icon: ShieldCheck }
       ]
     }
   ];
 
+  const [openSection, setOpenSection] = useState(() => getSectionKeyForTab(activeTab, navSections));
+  const [openSubgroup, setOpenSubgroup] = useState(() => getSubgroupForTab(activeTab));
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollTimerRef = useRef(null);
+  const activeItemRef = useRef(null);
+
+  const handleSidebarScroll = () => {
+    setIsScrolling(true);
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      setIsScrolling(false);
+    }, 800);
+  };
+
+  // Keep only the active section & active submenu open when activeTab changes, and scroll it into view
+  useEffect(() => {
+    const nextSec = getSectionKeyForTab(activeTab, navSections);
+    setOpenSection(nextSec);
+    setOpenSubgroup(getSubgroupForTab(activeTab));
+
+    requestAnimationFrame(() => {
+      activeItemRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }, [activeTab]);
+
+  const toggleSection = (key) => {
+    setOpenSection((prev) => (prev === key ? null : key));
+  };
+
+  const toggleSubgroup = (key) => {
+    setOpenSubgroup((prev) => (prev === key ? null : key));
+  };
+
+  const showSuperadmin = canAccessTab(currentUser, 'superadmin');
+
+  const saUserItems = [
+    { id: 'superadmin_users', label: 'Users', icon: Users },
+    { id: 'superadmin_roles', label: 'Roles', icon: ShieldCheck },
+    { id: 'superadmin_permissions', label: 'Permissions', icon: KeyRound },
+    { id: 'superadmin_access', label: 'Access', icon: Lock }
+  ];
+
+  const saLocationItems = [
+    { id: 'superadmin_city', label: 'City', icon: MapPin },
+    { id: 'superadmin_state', label: 'State', icon: MapPin },
+    { id: 'superadmin_country', label: 'Country', icon: Globe },
+    { id: 'superadmin_zone', label: 'Zone', icon: Compass }
+  ];
+
+  const saDirectItems = [
+    { id: 'superadmin_couriers', label: 'Couriers', icon: Truck },
+    { id: 'superadmin_payment_types', label: 'Payment Type', icon: Wallet },
+    { id: 'superadmin_customers', label: 'Customer', icon: Building2 }
+  ];
+
+  const handleNav = (tabId) => {
+    setActiveTab(tabId);
+    if (onCloseMobile) onCloseMobile();
+  };
+
   return (
-    <aside className="w-56 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 min-h-[calc(100vh-3.25rem)] text-slate-300">
-      <div className="p-2.5 space-y-4 flex-1 overflow-y-auto">
-        {navSections.map((section, idx) => {
-          // Filter items based on user's active permissions!
-          const accessibleItems = section.items.filter(item => canAccessTab(currentUser, item.id));
-          if (accessibleItems.length === 0) return null;
+    <>
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-30 md:hidden"
+          onClick={onCloseMobile}
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`fixed md:static inset-y-0 left-0 z-40 w-60 md:w-56 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 h-[calc(100vh-3.25rem)] md:h-full text-slate-300 transform transition-transform duration-200 ease-in-out ${
+          mobileOpen ? 'translate-x-0 top-13' : '-translate-x-full md:translate-x-0'
+        }`}
+      >
+        <div
+          onScroll={handleSidebarScroll}
+          className={`p-2.5 space-y-4 flex-1 overflow-y-auto sidebar-scroll ${isScrolling ? 'is-scrolling' : ''}`}
+        >
+          {/* SUPERADMIN MENU (Top Accordion) */}
+          {showSuperadmin && (
+            <div className="space-y-1 pb-2 border-b border-slate-800">
+              <button
+                type="button"
+                onClick={() => toggleSection('superadmin')}
+                className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-[10px] font-bold text-sky-400 uppercase tracking-wider hover:bg-slate-800/60 cursor-pointer"
+              >
+                <span>Superadmin</span>
+                {openSection === 'superadmin' ? (
+                  <ChevronDown className="h-3.5 w-3.5 text-sky-400" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-500" />
+                )}
+              </button>
 
-          return (
-            <div key={idx} className="space-y-1">
-              <h3 className="px-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                {section.title}
-              </h3>
-              <div className="space-y-0.5">
-                {accessibleItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = activeTab === item.id;
-                  return (
+              {openSection === 'superadmin' && (
+                <div className="space-y-1">
+                  {/* Users Submenu */}
+                  <div>
                     <button
-                      key={item.id}
-                      onClick={() => setActiveTab(item.id)}
-                      className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                        isActive
-                          ? 'bg-slate-800 text-white font-semibold shadow-xs'
-                          : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                      }`}
+                      type="button"
+                      onClick={() => toggleSubgroup('sa_users')}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:bg-slate-800/60 cursor-pointer"
                     >
-                      <div className="flex items-center space-x-2 truncate">
-                        <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
-                        <span className="truncate">{item.label}</span>
-                      </div>
-
-                      {item.badge !== undefined && item.badge > 0 ? (
-                        <span
-                          className={`px-1.5 py-0.2 text-[10px] font-bold rounded-sm ${
-                            isActive
-                              ? 'bg-sky-500 text-white'
-                              : 'bg-slate-800 text-slate-400 border border-slate-700'
-                          }`}
-                        >
-                          {item.badge}
-                        </span>
+                      <span className="flex items-center space-x-2">
+                        <Users className="h-3.5 w-3.5 text-slate-400" />
+                        <span>Users</span>
+                      </span>
+                      {openSubgroup === 'sa_users' ? (
+                        <ChevronDown className="h-3 w-3 text-slate-500" />
                       ) : (
-                        isActive && <ChevronRight className="h-3 w-3 opacity-60 text-sky-400" />
+                        <ChevronRight className="h-3 w-3 text-slate-500" />
                       )}
                     </button>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                    {openSubgroup === 'sa_users' && (
+                      <div className="ml-3 pl-2 border-l border-slate-800 space-y-0.5 mt-0.5">
+                        {saUserItems.map((item) => {
+                          const Icon = item.icon;
+                          const isActive = activeTab === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              ref={isActive ? activeItemRef : null}
+                              type="button"
+                              onClick={() => handleNav(item.id)}
+                              className={`w-full flex items-center space-x-2 px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-800 text-white font-semibold'
+                                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                              }`}
+                            >
+                              <Icon className={`h-3 w-3 flex-shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
 
-      {/* Compact Active Role Badge */}
-      <div className="p-2.5 border-t border-slate-800 text-[10px] text-slate-400">
-        <div className="flex items-center justify-between">
-          <span className="font-semibold text-slate-300">Access Scope:</span>
-          <span className="font-bold text-sky-400 truncate max-w-[100px]">
-            {currentUser?.role_name || 'Restricted'}
+                  {/* Location Submenu */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => toggleSubgroup('sa_location')}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:bg-slate-800/60 cursor-pointer"
+                    >
+                      <span className="flex items-center space-x-2">
+                        <Globe className="h-3.5 w-3.5 text-slate-400" />
+                        <span>Location</span>
+                      </span>
+                      {openSubgroup === 'sa_location' ? (
+                        <ChevronDown className="h-3 w-3 text-slate-500" />
+                      ) : (
+                        <ChevronRight className="h-3 w-3 text-slate-500" />
+                      )}
+                    </button>
+                    {openSubgroup === 'sa_location' && (
+                      <div className="ml-3 pl-2 border-l border-slate-800 space-y-0.5 mt-0.5">
+                        {saLocationItems.map((item) => {
+                          const Icon = item.icon;
+                          const isActive = activeTab === item.id;
+                          return (
+                            <button
+                              key={item.id}
+                              ref={isActive ? activeItemRef : null}
+                              type="button"
+                              onClick={() => handleNav(item.id)}
+                              className={`w-full flex items-center space-x-2 px-2 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                                isActive
+                                  ? 'bg-slate-800 text-white font-semibold'
+                                  : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                              }`}
+                            >
+                              <Icon className={`h-3 w-3 flex-shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-500'}`} />
+                              <span>{item.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Direct Superadmin Items: Couriers, Payment Type, Customer */}
+                  <div className="space-y-0.5">
+                    {saDirectItems.map((item) => {
+                      const Icon = item.icon;
+                      const isActive = activeTab === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          ref={isActive ? activeItemRef : null}
+                          type="button"
+                          onClick={() => handleNav(item.id)}
+                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                            isActive
+                              ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                              : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center space-x-2 truncate">
+                            <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                            <span className="truncate">{item.label}</span>
+                          </div>
+                          {isActive && <ChevronRight className="h-3 w-3 text-slate-500 flex-shrink-0" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* STANDARD NAVIGATION SECTIONS (Flat Always-Visible Style) */}
+          {navSections.map((section) => {
+            const accessibleItems = section.items.filter((item) => canAccessTab(currentUser, item.id));
+            if (accessibleItems.length === 0) return null;
+
+            return (
+              <div key={section.key}>
+                <p className="px-2.5 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 truncate">
+                  {section.title}
+                </p>
+
+                <div className="space-y-0.5">
+                  {accessibleItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        ref={isActive ? activeItemRef : null}
+                        type="button"
+                        onClick={() => handleNav(item.id)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-xs font-medium transition-colors cursor-pointer ${
+                          isActive
+                            ? 'bg-slate-800 text-white font-semibold shadow-xs'
+                            : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center space-x-2 truncate">
+                          <Icon className={`h-3.5 w-3.5 flex-shrink-0 ${isActive ? 'text-sky-400' : 'text-slate-400'}`} />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+
+                        {isActive && <ChevronRight className="h-3 w-3 text-slate-500 flex-shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer Info */}
+        <div className="p-2.5 border-t border-slate-800 text-[10px] text-slate-500 flex items-center justify-between">
+          <span>SAR ERP • v2.4</span>
+          <span className="flex items-center space-x-1">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+            <span>Live DB</span>
           </span>
         </div>
-      </div>
-    </aside>
+      </aside>
+    </>
   );
 }

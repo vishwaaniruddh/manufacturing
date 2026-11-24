@@ -10,11 +10,15 @@ import {
   Plus, 
   ArrowRight,
   AlertCircle,
-  History
+  History,
+  Download,
+  FileSpreadsheet
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import Pagination, { usePagination } from '../components/Pagination';
+import { exportToCsv } from '../utils/exportCsv';
 
-export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAudit }) {
+export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAudit, onOpenLeadEngine }) {
   const [leads, setLeads] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +114,8 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
     l.customer_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  const leadsPagination = usePagination(filteredLeads, 10);
+
   return (
     <div className="space-y-3.5">
       
@@ -139,6 +145,16 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
             </button>
           )}
 
+          {hasPermission(currentUser, 'leads', 'create') && onOpenLeadEngine && (
+            <button
+              type="button"
+              onClick={onOpenLeadEngine}
+              className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium flex items-center gap-1 shadow-xs"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Lead Engine / Excel Import
+            </button>
+          )}
+
           {hasPermission(currentUser, 'leads', 'create') && (
             <button
               onClick={() => setShowCreateModal(true)}
@@ -163,20 +179,46 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
           />
         </div>
 
-        <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
-          {['', 'pending', 'approved', 'rejected'].map((st) => (
-            <button
-              key={st}
-              onClick={() => setFilterStatus(st)}
-              className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
-                filterStatus === st
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              {st || 'All'}
-            </button>
-          ))}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-md border border-slate-200 text-xs">
+            {['', 'pending', 'approved', 'rejected'].map((st) => (
+              <button
+                key={st}
+                type="button"
+                onClick={() => setFilterStatus(st)}
+                className={`px-2.5 py-1 rounded text-xs font-medium capitalize transition-colors ${
+                  filterStatus === st
+                    ? 'bg-white text-slate-900 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {st || 'All'}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              exportToCsv(
+                'leads',
+                [
+                  { header: 'Lead #', accessor: 'lead_number' },
+                  { header: 'Title', accessor: 'title' },
+                  { header: 'Customer', accessor: 'customer_name' },
+                  { header: 'Phone', accessor: 'customer_phone' },
+                  { header: 'Est. Value', accessor: 'estimated_value' },
+                  { header: 'Source', accessor: 'source' },
+                  { header: 'Status', accessor: 'status' },
+                  { header: 'Created Date', accessor: 'created_at' }
+                ],
+                filteredLeads
+              )
+            }
+            title="Export filtered leads"
+            className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
+          >
+            <Download className="h-3.5 w-3.5" /> Export
+          </button>
         </div>
       </div>
 
@@ -189,11 +231,17 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
             No leads found. Create a new lead to begin.
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+            <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
+              <span>Total Records: <strong className="text-slate-800">{filteredLeads.length}</strong></span>
+              <span>Page {leadsPagination.currentPage} of {leadsPagination.totalPages}</span>
+            </div>
+            <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
-                  <th className="px-3.5 py-2.5">Lead # & Title</th>
+                  <th className="px-3 py-2.5 w-10 text-center">#</th>
+                  <th className="px-3.5 py-2.5 min-w-[290px] max-w-[360px] whitespace-nowrap">Lead # & Title</th>
                   <th className="px-3.5 py-2.5">Customer</th>
                   <th className="px-3.5 py-2.5">Est. Value</th>
                   <th className="px-3.5 py-2.5">Source & Date</th>
@@ -202,16 +250,31 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredLeads.map((item) => (
+                {leadsPagination.paginatedItems.map((item, idx) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
+                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                      {leadsPagination.startIndex + idx + 1}
+                    </td>
                     
-                    <td className="px-3.5 py-2.5">
-                      <span className="font-mono text-[11px] font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                    <td className="px-3.5 py-2.5 min-w-[290px] max-w-[360px]">
+                      <span className="inline-block whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                         {item.lead_number}
                       </span>
-                      <p className="font-semibold text-slate-900 text-xs mt-0.5">{item.title}</p>
+                      <p className="font-semibold text-slate-900 text-xs mt-1 leading-snug break-words">
+                        {(() => {
+                          const words = (item.title || '').trim().split(/\s+/).filter(Boolean);
+                          if (words.length <= 6) return item.title;
+                          return (
+                            <>
+                              {words.slice(0, 6).join(' ')}
+                              <br />
+                              {words.slice(6).join(' ')}
+                            </>
+                          );
+                        })()}
+                      </p>
                       {item.requirement_details && (
-                        <p className="text-[11px] text-slate-500 line-clamp-1 max-w-xs">
+                        <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[340px]">
                           {item.requirement_details}
                         </p>
                       )}
@@ -257,39 +320,38 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                     </td>
 
                     <td className="px-3.5 py-2.5 text-right space-x-1.5 whitespace-nowrap">
-                      {/* Only authorized roles can approve/reject */}
-                      {item.status === 'pending' && hasPermission(currentUser, 'leads', 'approve') && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setShowActionModal({ type: 'approve', lead: item });
-                              setActionRemarks('');
-                            }}
-                            className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] transition-colors"
-                          >
-                            Approve
-                          </button>
-                          <button
-                            onClick={() => {
-                              setShowActionModal({ type: 'reject', lead: item });
-                              setActionRemarks('');
-                            }}
-                            className="h-7 px-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] transition-colors"
-                          >
-                            Reject
-                          </button>
-                        </>
-                      )}
+                      <button
+                        type="button"
+                        disabled={item.status !== 'pending' || !hasPermission(currentUser, 'leads', 'approve')}
+                        onClick={() => {
+                          setShowActionModal({ type: 'approve', lead: item });
+                          setActionRemarks('');
+                        }}
+                        className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
+                      >
+                        Approve
+                      </button>
 
-                      {/* Only if permitted to create quotations */}
-                      {item.status === 'approved' && hasPermission(currentUser, 'quotations', 'create') && (
-                        <button
-                          onClick={() => onSelectForQuotation(item)}
-                          className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 transition-colors"
-                        >
-                          + Quote <ArrowRight className="h-3 w-3" />
-                        </button>
-                      )}
+                      <button
+                        type="button"
+                        disabled={item.status !== 'pending' || !hasPermission(currentUser, 'leads', 'approve')}
+                        onClick={() => {
+                          setShowActionModal({ type: 'reject', lead: item });
+                          setActionRemarks('');
+                        }}
+                        className="h-7 px-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                      >
+                        Reject
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={item.status !== 'approved' || !hasPermission(currentUser, 'quotations', 'create')}
+                        onClick={() => onSelectForQuotation(item)}
+                        className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
+                      >
+                        + Quote <ArrowRight className="h-3 w-3" />
+                      </button>
                     </td>
 
                   </tr>
@@ -297,6 +359,16 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
               </tbody>
             </table>
           </div>
+          </>
+        )}
+        {!loading && (
+          <Pagination
+            currentPage={leadsPagination.currentPage}
+            totalPages={leadsPagination.totalPages}
+            totalItems={leadsPagination.totalItems}
+            pageSize={leadsPagination.pageSize}
+            onPageChange={leadsPagination.setCurrentPage}
+          />
         )}
       </div>
 

@@ -14,6 +14,7 @@ import {
   Layers
 } from 'lucide-react';
 import { hasPermission } from '../utils/rbac';
+import { MediaUploader, MediaGallery } from '../components/MediaUploader';
 
 export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, onDispatchReady, onOpenAudit }) {
   const [wo, setWo] = useState(null);
@@ -28,13 +29,24 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
   const [qcRemarks, setQcRemarks] = useState('');
   const [defectReason, setDefectReason] = useState('');
   const [inspectorName, setInspectorName] = useState(currentUser?.name || 'Sunil Deshmukh (Senior QC)');
+  const [qcMediaFiles, setQcMediaFiles] = useState([]);
+  const [stageMediaMap, setStageMediaMap] = useState({});
   const [submittingQC, setSubmittingQC] = useState(false);
 
   const loadDetails = async () => {
     setLoading(true);
     try {
-      const res = await api.getWorkOrder(workOrderId);
+      const [res, mRes] = await Promise.all([
+        api.getWorkOrder(workOrderId),
+        api.getMedia('qc_stage')
+      ]);
       setWo(res.data);
+      const grouped = {};
+      (mRes.data || []).forEach((m) => {
+        grouped[m.entity_id] = grouped[m.entity_id] || [];
+        grouped[m.entity_id].push(m);
+      });
+      setStageMediaMap(grouped);
     } catch (err) {
       alert('Failed to load work order: ' + err.message);
     } finally {
@@ -171,7 +183,11 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
       };
 
       const res = await api.verifyStageQC(payload);
+      if (qcMediaFiles.length > 0 && activeStageForQC?.id) {
+        await api.uploadMedia('qc_stage', activeStageForQC.id, qcMediaFiles, currentUser?.id || 1);
+      }
       alert(res.message);
+      setQcMediaFiles([]);
       setActiveStageForQC(null);
       setQcRemarks('');
       setDefectReason('');
@@ -201,7 +217,10 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-lg border border-slate-200/90 shadow-xs">
         <div className="flex items-center gap-2.5">
           <button
+            type="button"
             onClick={onBack}
+            title="Back to Manufacturing"
+            aria-label="Back to Manufacturing"
             className="p-1.5 rounded-md border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -343,6 +362,7 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
                   <table className="w-full text-left text-[11px]">
                     <thead>
                       <tr className="text-slate-500 font-medium border-b border-slate-200/70 text-[10px]">
+                        <th className="py-1 px-2 w-8 text-center">#</th>
                         <th className="py-1 pr-2">Product / Component Row</th>
                         <th className="py-1 px-2">Type</th>
                         <th className="py-1 px-2 text-center">Batch Target</th>
@@ -363,6 +383,9 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
 
                         return (
                           <tr key={idx} className="hover:bg-slate-50/50">
+                            <td className="py-1 px-2 text-center font-mono text-[10px] text-slate-400">
+                              {idx + 1}
+                            </td>
                             <td className="py-1 pr-2">
                               <span className="font-semibold text-slate-900">{item.product_name || item.name}</span>
                               <span className="font-mono text-[9px] text-slate-400 block">{item.product_sku || item.sku}</span>
@@ -408,6 +431,12 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
                       })}
                     </tbody>
                   </table>
+                  {(stageMediaMap[stage.id] || []).length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-slate-200/70 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase">Stage Evidence:</span>
+                      <MediaGallery attachments={stageMediaMap[stage.id]} />
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -459,6 +488,7 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-50 sticky top-0 border-b border-slate-200 text-[11px] font-semibold text-slate-600">
                       <tr>
+                        <th className="py-2 px-2 w-8 text-center">#</th>
                         <th className="py-2 px-3">Product / Component Row</th>
                         <th className="py-2 px-2 text-center">Type</th>
                         <th className="py-2 px-2 text-center">Target Qty</th>
@@ -475,6 +505,9 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
 
                         return (
                           <tr key={idx} className={isFailed ? 'bg-rose-50/30' : 'hover:bg-slate-50/50'}>
+                            <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-400">
+                              {idx + 1}
+                            </td>
                             <td className="py-2 px-3">
                               <span className="font-semibold text-slate-900 block leading-tight">{row.product_name}</span>
                               <div className="flex items-center gap-1.5 mt-0.5">
@@ -554,6 +587,12 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
                       })}
                     </tbody>
                   </table>
+                  {(stageMediaMap[stage.id] || []).length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-slate-200/70 flex items-center gap-2">
+                      <span className="text-[10px] font-semibold text-slate-500 uppercase">Stage Evidence:</span>
+                      <MediaGallery attachments={stageMediaMap[stage.id]} />
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -598,6 +637,12 @@ export default function WorkOrderDetailView({ currentUser, workOrderId, onBack, 
                   />
                 </div>
               </div>
+
+              <MediaUploader
+                files={qcMediaFiles}
+                onChange={setQcMediaFiles}
+                label="QC Stage Inspection Evidence (Photos, Videos, Test Reports)"
+              />
 
               {/* Action Buttons & Totals Summary */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100">
