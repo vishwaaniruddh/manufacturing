@@ -1,9 +1,11 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
-    RewriteBase /manufacturing/
+
+    # Block direct web access to git metadata, env files, and SQL dumps/migrations
+    RewriteRule ^(\.git(/|$)|\.env|.*\.sql$) - [F,L,NC]
 
     # Do not rewrite calls to the REST API or existing physical files/directories
-    RewriteCond %{REQUEST_URI} ^/manufacturing/api/ [NC,OR]
+    RewriteCond %{REQUEST_URI} ^(/manufacturing)?/api/ [NC,OR]
     RewriteCond %{REQUEST_FILENAME} -f [OR]
     RewriteCond %{REQUEST_FILENAME} -d
     RewriteRule ^ - [L]
@@ -11,3 +13,13 @@
     # Rewrite all other paths to index.html for Single Page Application
     RewriteRule ^ index.html [L]
 </IfModule>
+
+<FilesMatch "\.(sql|log|bak|env|md)$">
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order allow,deny
+        Deny from all
+    </IfModule>
+</FilesMatch>

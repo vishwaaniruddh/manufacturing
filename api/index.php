@@ -377,6 +377,7 @@ try {
         default:
             Response::json([
                 "status" => "online",
+                "environment" => $database->getEnvironment(),
                 "service" => "Manufacturing ERP REST API",
                 "version" => "1.0.0",
                 "message" => "Welcome to the Manufacturing ERP Backend API. Provide a valid route endpoint."

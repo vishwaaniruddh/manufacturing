@@ -1,6 +1,22 @@
 // client/src/services/api.js
 
-const API_BASE = '/manufacturing/api/';
+export const APP_BASE =
+  typeof window !== 'undefined' && window.location.pathname.startsWith('/manufacturing')
+    ? '/manufacturing/'
+    : import.meta.env.DEV
+      ? '/manufacturing/'
+      : '/';
+
+export const API_BASE = `${APP_BASE}api/`;
+
+export function resolveMediaUrl(filePath) {
+  if (!filePath || typeof filePath !== 'string') return '';
+  if (/^https?:\/\//i.test(filePath) || filePath.startsWith('data:') || filePath.startsWith('blob:')) {
+    return filePath;
+  }
+  const cleanRelative = filePath.replace(/^\/?(?:manufacturing\/)?/, '');
+  return `${APP_BASE}${cleanRelative}`;
+}
 
 export async function request(endpoint, options = {}) {
   const url = `${API_BASE}${endpoint}`;
@@ -114,6 +130,8 @@ export const api = {
   // Quotations
   getQuotations: (leadId) => request(`quotations${leadId ? `?lead_id=${leadId}` : ''}`),
   getQuotation: (id) => request(`quotations/${id}`),
+  getQuotationPdfUrl: (id) => `${API_BASE}quotations/${id}/pdf`,
+  getQuotationExcelUrl: (id) => `${API_BASE}quotations/${id}/excel`,
   createQuotation: (data) => request('quotations', { method: 'POST', body: JSON.stringify(data) }),
   updateQuotation: (id, data) => request(`quotations/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   approveQuotation: (id) => request(`quotations/approve/${id}`, { method: 'POST' }),

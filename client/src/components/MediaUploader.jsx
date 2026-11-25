@@ -1,6 +1,7 @@
 // client/src/components/MediaUploader.jsx
 import React, { useState } from 'react';
 import { Upload, X, FileText, Film, Image as ImageIcon, Paperclip, ExternalLink, Camera } from 'lucide-react';
+import { resolveMediaUrl } from '../services/api';
 
 const VIDEO_EXT_RE = /\.(mp4|mov|webm|m4v|avi|mkv|3gp)$/i;
 const IMAGE_EXT_RE = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i;
@@ -183,7 +184,9 @@ export function MediaGallery({ attachments = [] }) {
         })}
       </div>
 
-      {previewItem && (
+      {previewItem && (() => {
+        const previewUrl = resolveMediaUrl(previewItem.file_path);
+        return (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-[60] flex items-center justify-center p-4">
           <div className="bg-white rounded-lg max-w-2xl w-full p-4 shadow-2xl border border-slate-200 space-y-3">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2">
@@ -196,7 +199,7 @@ export function MediaGallery({ attachments = [] }) {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <a
-                  href={previewItem.file_path}
+                  href={previewUrl}
                   target="_blank"
                   rel="noreferrer"
                   className="h-7 px-2 border border-slate-200 rounded text-[11px] font-medium text-slate-700 hover:bg-slate-50 inline-flex items-center gap-1"
@@ -215,15 +218,15 @@ export function MediaGallery({ attachments = [] }) {
 
             <div className="max-h-[70vh] overflow-auto flex items-center justify-center bg-slate-50 rounded border border-slate-200 p-2">
               {isImageFile(previewItem) ? (
-                <img src={previewItem.file_path} alt={previewItem.file_name} className="max-h-[65vh] object-contain rounded" />
+                <img src={previewUrl} alt={previewItem.file_name} className="max-h-[65vh] object-contain rounded" />
               ) : isVideoFile(previewItem) ? (
-                <video src={previewItem.file_path} controls playsInline preload="metadata" className="max-h-[65vh] w-full rounded bg-black" />
+                <video src={previewUrl} controls playsInline preload="metadata" className="max-h-[65vh] w-full rounded bg-black" />
               ) : (
                 <div className="p-6 text-center space-y-2">
                   <FileText className="h-10 w-10 text-slate-400 mx-auto" />
                   <p className="text-xs text-slate-600">{previewItem.file_name}</p>
                   <a
-                    href={previewItem.file_path}
+                    href={previewUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 px-3 py-1.5 bg-slate-900 text-white rounded text-xs font-medium"
@@ -235,7 +238,8 @@ export function MediaGallery({ attachments = [] }) {
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </>
   );
 }

@@ -285,7 +285,7 @@ export default function QuotationsView({
                     <td className="px-2.5 py-2.5 text-right">
                       <div className="flex flex-wrap items-center justify-end gap-1 max-w-[235px] ml-auto">
                       <a
-                        href={`/manufacturing/api/quotations/${q.id}/pdf`}
+                        href={api.getQuotationPdfUrl(q.id)}
                         target="_blank"
                         rel="noreferrer"
                         title="Download Quotation PDF"
@@ -295,7 +295,7 @@ export default function QuotationsView({
                       </a>
 
                       <a
-                        href={`/manufacturing/api/quotations/${q.id}/excel`}
+                        href={api.getQuotationExcelUrl(q.id)}
                         target="_blank"
                         rel="noreferrer"
                         title="Download Quotation Excel"

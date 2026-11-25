@@ -370,7 +370,7 @@ export default function QuotationDetailView({
           {isView && quotationId && (
             <>
               <a
-                href={`/manufacturing/api/quotations/${quotationId}/pdf`}
+                href={api.getQuotationPdfUrl(quotationId)}
                 target="_blank"
                 rel="noreferrer"
                 className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-rose-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"
@@ -379,7 +379,7 @@ export default function QuotationDetailView({
                 <Download className="h-3.5 w-3.5" /> PDF
               </a>
               <a
-                href={`/manufacturing/api/quotations/${quotationId}/excel`}
+                href={api.getQuotationExcelUrl(quotationId)}
                 target="_blank"
                 rel="noreferrer"
                 className="h-8 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-emerald-700 rounded-md text-xs font-medium inline-flex items-center gap-1 shadow-xs"

@@ -13,6 +13,13 @@ class MediaController {
         }
     }
 
+    private function getWebBasePrefix() {
+        $scriptDir = str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '/api/index.php'));
+        $base = preg_replace('#/api/?$#', '', $scriptDir);
+        $base = '/' . trim($base, '/');
+        return $base === '/' ? '/' : $base . '/';
+    }
+
     private function resolveMimeType($clientMime, $ext) {
         $extLower = strtolower((string)$ext);
         $extMap = [
@@ -110,7 +117,7 @@ class MediaController {
             $destPath = $targetDir . DIRECTORY_SEPARATOR . $uniqueName;
 
             if (move_uploaded_file($tmpNames[$i], $destPath)) {
-                $webPath = '/manufacturing/uploads/' . $entityType . '/' . $uniqueName;
+                $webPath = $this->getWebBasePrefix() . 'uploads/' . $entityType . '/' . $uniqueName;
                 $mime = $this->resolveMimeType($types[$i] ?? '', $ext);
                 $size = intval($sizes[$i] ?? 0);
                 $docLabel = !empty($docLabels[$i]) ? substr(trim($docLabels[$i]), 0, 50) : $defaultDocLabel;
@@ -140,7 +147,7 @@ class MediaController {
         $stmt->execute([$id]);
         $row = $stmt->fetch();
         if ($row) {
-            $rel = str_replace('/manufacturing/', '', $row['file_path']);
+            $rel = ltrim(preg_replace('#^/(?:manufacturing/)?(?=uploads/)#', '', (string)$row['file_path']), '/');
             $fullPath = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $rel);
             if (file_exists($fullPath)) {
                 @unlink($fullPath);

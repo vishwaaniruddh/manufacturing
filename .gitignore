@@ -1,6 +1,9 @@
 node_modules/
 client/node_modules/
 api/vendor/
+api/config/database.local.php
+.env
+.env.*
 *.log
 .DS_Store
 Thumbs.db
