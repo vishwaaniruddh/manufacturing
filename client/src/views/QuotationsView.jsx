@@ -16,6 +16,7 @@ import {
 import { hasPermission } from '../utils/rbac';
 import Pagination, { usePagination } from '../components/Pagination';
 import { exportToCsv } from '../utils/exportCsv';
+import LinkedPOBadges from '../components/LinkedPOBadges';
 
 export default function QuotationsView({
   currentUser,
@@ -23,6 +24,7 @@ export default function QuotationsView({
   onViewQuotation,
   onEditQuotation,
   onGeneratePO,
+  onViewPO,
   onOpenAudit
 }) {
   const [quotations, setQuotations] = useState([]);
@@ -189,50 +191,62 @@ export default function QuotationsView({
           <>
             <div className="px-3.5 py-2 bg-slate-50/60 border-b border-slate-200/80 flex items-center justify-between text-[11px] text-slate-500">
               <span>Total Records: <strong className="text-slate-800">{filteredQuotations.length}</strong></span>
-              <span>Page {quotationsPagination.currentPage} of {quotationsPagination.totalPages}</span>
+              <span>Page {quotesPagination.currentPage} of {quotesPagination.totalPages}</span>
             </div>
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Quotations and linked purchase orders table"
+              className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+            >
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
-                  <th className="px-3 py-2.5 w-10 text-center">#</th>
-                  <th className="px-3.5 py-2.5">Quote # & Rev</th>
-                  <th className="px-3.5 py-2.5">Lead & Client</th>
-                  <th className="px-3.5 py-2.5">Items & Valid Date</th>
-                  <th className="px-3.5 py-2.5">Total Amount</th>
-                  <th className="px-3.5 py-2.5">Status</th>
-                  <th className="px-3.5 py-2.5 text-right">Actions</th>
+                  <th scope="col" className="px-2.5 py-2.5 w-8 text-center">#</th>
+                  <th scope="col" className="px-2.5 py-2.5">Quote # & Rev</th>
+                  <th scope="col" className="px-2.5 py-2.5">Lead & Client</th>
+                  <th scope="col" className="px-2.5 py-2.5">Items & Valid Date</th>
+                  <th scope="col" className="px-2.5 py-2.5">Total Amount</th>
+                  <th scope="col" className="px-2.5 py-2.5">Status</th>
+                  <th scope="col" className="px-2.5 py-2.5">Purchase Orders</th>
+                  <th scope="col" className="px-2.5 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {quotesPagination.paginatedItems.map((q, idx) => (
                   <tr key={q.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                    <td className="px-2.5 py-2.5 text-center font-mono text-[11px] text-slate-400">
                       {quotesPagination.startIndex + idx + 1}
                     </td>
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => onViewQuotation && onViewQuotation(q.id)}
+                          className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 hover:bg-slate-200 px-1.5 py-0.5 rounded border border-slate-200 transition-colors cursor-pointer"
+                        >
                           {q.quotation_number}
-                        </span>
-                        <span className="px-1.5 py-0.2 text-[10px] font-bold rounded bg-slate-100 text-slate-600">
+                        </button>
+                        <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-slate-100 text-slate-600">
                           R{q.revision_number}
                         </span>
                       </div>
                       <span className="text-[10px] text-slate-400 mt-0.5 block">{q.quotation_date}</span>
                     </td>
 
-                    <td className="px-3.5 py-2.5">
-                      <p className="font-semibold text-slate-900">{q.customer_name}</p>
-                      <p className="text-[11px] text-slate-500 truncate max-w-xs">{q.lead_title}</p>
+                    <td className="px-2.5 py-2.5">
+                      <p className="font-semibold text-slate-900 truncate max-w-[170px]">{q.customer_name}</p>
+                      <p className="text-[11px] text-slate-500 truncate max-w-[170px]">
+                        {q.lead_number ? `${q.lead_number} • ` : ''}{q.lead_title}
+                      </p>
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       <span className="font-medium text-slate-700">{q.item_count} Items</span>
                       <p className="text-[10px] text-slate-400">Valid: {q.valid_until}</p>
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       <p className="font-bold text-slate-900">
                         ₹{Number(q.total_amount).toLocaleString()}
                       </p>
@@ -241,7 +255,7 @@ export default function QuotationsView({
                       </span>
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       {q.status === 'approved' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <CheckCircle2 className="h-3 w-3" /> Approved
@@ -259,13 +273,23 @@ export default function QuotationsView({
                       )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 text-right space-x-1.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5">
+                      <LinkedPOBadges
+                        pos={q.linked_pos || []}
+                        fallbackPos={q.lead_linked_pos || []}
+                        onViewPO={onViewPO}
+                        emptyLabel="No POs"
+                      />
+                    </td>
+
+                    <td className="px-2.5 py-2.5 text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-1 max-w-[235px] ml-auto">
                       <a
                         href={`/manufacturing/api/quotations/${q.id}/pdf`}
                         target="_blank"
                         rel="noreferrer"
                         title="Download Quotation PDF"
-                        className="h-7 px-2 border border-slate-200 text-rose-700 hover:bg-rose-50 rounded-md text-[11px] font-medium inline-flex items-center gap-1"
+                        className="h-7 px-1.5 border border-slate-200 text-rose-700 hover:bg-rose-50 rounded-md text-[11px] font-medium inline-flex items-center gap-1"
                       >
                         <Download className="h-3 w-3" /> PDF
                       </a>
@@ -275,7 +299,7 @@ export default function QuotationsView({
                         target="_blank"
                         rel="noreferrer"
                         title="Download Quotation Excel"
-                        className="h-7 px-2 border border-slate-200 text-emerald-700 hover:bg-emerald-50 rounded-md text-[11px] font-medium inline-flex items-center gap-1"
+                        className="h-7 px-1.5 border border-slate-200 text-emerald-700 hover:bg-emerald-50 rounded-md text-[11px] font-medium inline-flex items-center gap-1"
                       >
                         <Download className="h-3 w-3" /> XLS
                       </a>
@@ -283,25 +307,25 @@ export default function QuotationsView({
                       <button
                         type="button"
                         onClick={() => onViewQuotation && onViewQuotation(q.id)}
-                        className="h-7 px-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-md text-[11px] font-medium"
+                        className="h-7 px-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-md text-[11px] font-medium inline-flex items-center gap-0.5"
                       >
-                        <Eye className="h-3.5 w-3.5 inline mr-1" /> View
+                        <Eye className="h-3.5 w-3.5" /> View
                       </button>
 
                       <button
                         type="button"
                         disabled={q.status === 'approved' || !hasPermission(currentUser, 'quotations', 'create')}
                         onClick={() => onEditQuotation && onEditQuotation(q.id)}
-                        className="h-7 px-2 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-md text-[11px] font-medium disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                        className="h-7 px-1.5 border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-md text-[11px] font-medium inline-flex items-center gap-0.5 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       >
-                        <Edit3 className="h-3.5 w-3.5 inline mr-1" /> Edit
+                        <Edit3 className="h-3.5 w-3.5" /> Edit
                       </button>
 
                       <button
                         type="button"
                         disabled={q.status !== 'draft' || !hasPermission(currentUser, 'quotations', 'approve')}
                         onClick={() => handleApproveQuotation(q.id)}
-                        className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
+                        className="h-7 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
                       >
                         Approve
                       </button>
@@ -310,7 +334,7 @@ export default function QuotationsView({
                         type="button"
                         disabled={q.status !== 'draft' || !hasPermission(currentUser, 'quotations', 'approve')}
                         onClick={() => handleRejectQuotation(q.id)}
-                        className="h-7 px-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                        className="h-7 px-2 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
                       >
                         Reject
                       </button>
@@ -319,10 +343,11 @@ export default function QuotationsView({
                         type="button"
                         disabled={q.status !== 'approved' || !hasPermission(currentUser, 'purchase_orders', 'create')}
                         onClick={() => onGeneratePO(q)}
-                        className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
+                        className="h-7 px-2 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
                       >
                         + PO <ArrowRight className="h-3 w-3" />
                       </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

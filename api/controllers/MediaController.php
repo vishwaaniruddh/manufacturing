@@ -13,6 +13,31 @@ class MediaController {
         }
     }
 
+    private function resolveMimeType($clientMime, $ext) {
+        $extLower = strtolower((string)$ext);
+        $extMap = [
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            'bmp' => 'image/bmp',
+            'svg' => 'image/svg+xml',
+            'mp4' => 'video/mp4',
+            'mov' => 'video/quicktime',
+            'webm' => 'video/webm',
+            'm4v' => 'video/mp4',
+            'avi' => 'video/x-msvideo',
+            'mkv' => 'video/x-matroska',
+            '3gp' => 'video/3gpp',
+            'pdf' => 'application/pdf'
+        ];
+        if (!empty($clientMime) && $clientMime !== 'application/octet-stream') {
+            return $clientMime;
+        }
+        return $extMap[$extLower] ?? ($clientMime ?: 'application/octet-stream');
+    }
+
     public function listByEntity() {
         $entityType = $_GET['entity_type'] ?? '';
         $entityId = isset($_GET['entity_id']) ? intval($_GET['entity_id']) : 0;
@@ -60,13 +85,22 @@ class MediaController {
         $errors = is_array($files['error']) ? $files['error'] : [$files['error']];
 
         $saved = [];
+        $uploadErrors = [];
         $ins = $this->db->prepare("
             INSERT INTO media_attachments (entity_type, entity_id, doc_label, file_name, file_path, mime_type, file_size, uploaded_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ");
 
         for ($i = 0; $i < count($names); $i++) {
-            if ($errors[$i] !== UPLOAD_ERR_OK || !is_uploaded_file($tmpNames[$i])) {
+            $errCode = intval($errors[$i] ?? UPLOAD_ERR_NO_FILE);
+            if ($errCode !== UPLOAD_ERR_OK) {
+                $fileNameErr = basename($names[$i] ?? 'file');
+                $uploadErrors[] = ($errCode === UPLOAD_ERR_INI_SIZE || $errCode === UPLOAD_ERR_FORM_SIZE)
+                    ? "{$fileNameErr} exceeds server upload limit"
+                    : "{$fileNameErr} upload failed (error {$errCode})";
+                continue;
+            }
+            if (!is_uploaded_file($tmpNames[$i])) {
                 continue;
             }
             $origName = basename($names[$i]);
@@ -77,7 +111,7 @@ class MediaController {
 
             if (move_uploaded_file($tmpNames[$i], $destPath)) {
                 $webPath = '/manufacturing/uploads/' . $entityType . '/' . $uniqueName;
-                $mime = $types[$i] ?? 'application/octet-stream';
+                $mime = $this->resolveMimeType($types[$i] ?? '', $ext);
                 $size = intval($sizes[$i] ?? 0);
                 $docLabel = !empty($docLabels[$i]) ? substr(trim($docLabels[$i]), 0, 50) : $defaultDocLabel;
                 $ins->execute([$entityType, $entityId, $docLabel, $origName, $webPath, $mime, $size, $uploadedBy]);
@@ -92,6 +126,10 @@ class MediaController {
                     'file_size' => $size
                 ];
             }
+        }
+
+        if (count($saved) === 0 && count($uploadErrors) > 0) {
+            Response::error(implode('; ', $uploadErrors));
         }
 
         Response::success(count($saved) . " file(s) uploaded", $saved, 201);

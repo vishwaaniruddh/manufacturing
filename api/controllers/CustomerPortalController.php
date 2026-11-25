@@ -176,7 +176,7 @@ class CustomerPortalController {
             $b['issue_details'],
             $b['severity'] ?? 'medium',
             $b['return_material_status'] ?? 'requested',
-            !empty($b['assigned_to']) ? intval($b['assigned_to']) : null
+            Response::resolveUserId($this->db, $b['assigned_to'] ?? null, true)
         ]);
         $id = $this->db->lastInsertId();
         Audit::log($this->db, 'customer_portal', 'create_ticket', 'ComplaintTicket', $ticketNumber, "Created ticket {$ticketNumber}: {$b['title']}");
@@ -205,7 +205,7 @@ class CustomerPortalController {
         }
         if (array_key_exists('assigned_to', $b)) {
             $fields[] = "assigned_to = ?";
-            $params[] = !empty($b['assigned_to']) ? intval($b['assigned_to']) : null;
+            $params[] = Response::resolveUserId($this->db, $b['assigned_to'] ?? null, true);
         }
 
         if (empty($fields)) {
@@ -263,6 +263,10 @@ class CustomerPortalController {
                 $txRef,
                 $notes
             ]);
+
+            if (class_exists('PaymentController')) {
+                (new PaymentController($this->db))->recalculatePoAllocations(intval($b['po_id']));
+            }
 
             // Mark PO as completed
             $this->db->prepare("UPDATE purchase_orders SET status = 'completed' WHERE id = ?")->execute([$b['po_id']]);

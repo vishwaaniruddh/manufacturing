@@ -4,6 +4,7 @@
 require_once __DIR__ . '/config/database.php';
 require_once __DIR__ . '/helpers/response.php';
 require_once __DIR__ . '/helpers/audit.php';
+require_once __DIR__ . '/helpers/wo_stages.php';
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/UserController.php';
 require_once __DIR__ . '/controllers/AuditController.php';
@@ -247,6 +248,8 @@ try {
                 $poCtrl->create();
             } elseif ($method === 'PUT' && !empty($actionOrId)) {
                 $poCtrl->update($actionOrId);
+            } elseif ($method === 'DELETE' && !empty($actionOrId)) {
+                $poCtrl->delete($actionOrId);
             } else {
                 Response::error("Method not supported for purchase orders", 405);
             }
@@ -254,8 +257,22 @@ try {
 
         // === PAYMENTS ===
         case 'payments':
-            if ($actionOrId === 'summary' && !empty($subAction) && $method === 'GET') {
+            if ($actionOrId === 'ledger' && $method === 'GET') {
+                $paymentCtrl->getLedger();
+            } elseif ($actionOrId === 'summary' && !empty($subAction) && $method === 'GET') {
                 $paymentCtrl->getSummary($subAction);
+            } elseif ($actionOrId === 'settle_excess' && $method === 'POST') {
+                $paymentCtrl->settleExcess();
+            } elseif (!empty($actionOrId) && is_numeric($actionOrId)) {
+                if ($subAction === 'status' && $method === 'POST') {
+                    $paymentCtrl->updateStatus($actionOrId);
+                } elseif ($method === 'PUT') {
+                    $paymentCtrl->update($actionOrId);
+                } elseif ($method === 'DELETE') {
+                    $paymentCtrl->delete($actionOrId);
+                } else {
+                    Response::error("Method not supported for payment record", 405);
+                }
             } elseif ($method === 'GET') {
                 $paymentCtrl->getAll();
             } elseif ($method === 'POST') {

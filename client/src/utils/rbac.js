@@ -41,10 +41,15 @@ export function canAccessTab(user, tabId) {
       return hasPermission(user, 'quotations');
 
     case 'purchase_orders':
+    case 'purchase_order_detail':
       return hasPermission(user, 'purchase_orders');
 
     case 'payments':
-      return hasPermission(user, 'payments');
+    case 'accounting_dashboard':
+    case 'accounting_po_balances':
+    case 'accounting_advances':
+    case 'accounting_customers':
+      return hasPermission(user, 'payments') || user.role_slug === 'accounts';
 
     case 'mrp':
     case 'inventory_products':
@@ -103,7 +108,11 @@ export function getFirstAllowedTab(user) {
     'leads',
     'quotations',
     'purchase_orders',
+    'accounting_dashboard',
     'payments',
+    'accounting_po_balances',
+    'accounting_advances',
+    'accounting_customers',
     'mrp',
     'manufacturing',
     'qc',

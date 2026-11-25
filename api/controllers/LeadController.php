@@ -28,7 +28,54 @@ class LeadController {
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        Response::success("Leads fetched", $stmt->fetchAll());
+        $rows = $stmt->fetchAll();
+
+        if (!empty($rows)) {
+            $qStmt = $this->db->query("
+                SELECT id, lead_id, quotation_number, revision_number, status, total_amount
+                FROM quotations
+                ORDER BY id DESC
+            ");
+            $quotesByLead = [];
+            foreach ($qStmt->fetchAll() as $q) {
+                $quotesByLead[intval($q['lead_id'])][] = [
+                    'id' => intval($q['id']),
+                    'quotation_number' => $q['quotation_number'],
+                    'revision_number' => intval($q['revision_number']),
+                    'status' => $q['status'],
+                    'total_amount' => floatval($q['total_amount'])
+                ];
+            }
+
+            $poStmt = $this->db->query("
+                SELECT po.id, po.po_number, po.customer_po_reference, po.quotation_id, po.status, po.total_amount, q.lead_id
+                FROM purchase_orders po
+                JOIN quotations q ON po.quotation_id = q.id
+                ORDER BY po.id DESC
+            ");
+            $posByLead = [];
+            foreach ($poStmt->fetchAll() as $po) {
+                $posByLead[intval($po['lead_id'])][] = [
+                    'id' => intval($po['id']),
+                    'po_number' => $po['po_number'],
+                    'customer_po_reference' => $po['customer_po_reference'],
+                    'quotation_id' => intval($po['quotation_id']),
+                    'status' => $po['status'],
+                    'total_amount' => floatval($po['total_amount'])
+                ];
+            }
+
+            foreach ($rows as &$r) {
+                $lId = intval($r['id']);
+                $r['linked_quotations'] = $quotesByLead[$lId] ?? [];
+                $r['quotation_count'] = count($r['linked_quotations']);
+                $r['linked_pos'] = $posByLead[$lId] ?? [];
+                $r['po_count'] = count($r['linked_pos']);
+            }
+            unset($r);
+        }
+
+        Response::success("Leads fetched", $rows);
     }
 
     public function getOne($id) {
@@ -80,8 +127,8 @@ class LeadController {
             $b['priority'] ?? 'medium',
             !empty($b['expected_close_date']) ? $b['expected_close_date'] : null,
             $b['remarks'] ?? null,
-            !empty($b['assigned_to']) ? intval($b['assigned_to']) : null,
-            !empty($b['created_by']) ? intval($b['created_by']) : 1
+            Response::resolveUserId($this->db, $b['assigned_to'] ?? null, true),
+            Response::resolveUserId($this->db, $b['created_by'] ?? null)
         ]);
 
         $leadId = $this->db->lastInsertId();
@@ -108,7 +155,7 @@ class LeadController {
             $b['source'] ?? 'Direct Inquiry',
             $b['priority'] ?? 'medium',
             !empty($b['expected_close_date']) ? $b['expected_close_date'] : null,
-            !empty($b['assigned_to']) ? intval($b['assigned_to']) : null,
+            Response::resolveUserId($this->db, $b['assigned_to'] ?? null, true),
             $b['remarks'] ?? null,
             $id
         ]);
@@ -125,8 +172,8 @@ class LeadController {
 
         $defaultSource = $b['default_source'] ?? 'Excel Import';
         $defaultPriority = $b['default_priority'] ?? 'medium';
-        $defaultAssignedTo = !empty($b['default_assigned_to']) ? intval($b['default_assigned_to']) : null;
-        $createdBy = !empty($b['created_by']) ? intval($b['created_by']) : 1;
+        $defaultAssignedTo = Response::resolveUserId($this->db, $b['default_assigned_to'] ?? null, true);
+        $createdBy = Response::resolveUserId($this->db, $b['created_by'] ?? null);
 
         // Preload customers & users for fast matching
         $custMap = [];
@@ -234,7 +281,7 @@ class LeadController {
 
     public function approve($id) {
         $b = Response::getBody();
-        $approvedBy = !empty($b['user_id']) ? intval($b['user_id']) : 1;
+        $approvedBy = Response::resolveUserId($this->db, $b['user_id'] ?? null);
         $remarks = $b['remarks'] ?? 'Lead approved for quotation';
 
         $stmt = $this->db->prepare("
@@ -250,7 +297,7 @@ class LeadController {
 
     public function reject($id) {
         $b = Response::getBody();
-        $rejectedBy = !empty($b['user_id']) ? intval($b['user_id']) : 1;
+        $rejectedBy = Response::resolveUserId($this->db, $b['user_id'] ?? null);
         $remarks = $b['remarks'] ?? 'Lead rejected';
 
         if (empty($remarks)) {

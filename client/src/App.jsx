@@ -1,5 +1,5 @@
 // client/src/App.jsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import Sidebar from './components/Sidebar';
 
@@ -10,6 +10,7 @@ import LeadEngineView from './views/LeadEngineView';
 import QuotationsView from './views/QuotationsView';
 import QuotationDetailView from './views/QuotationDetailView';
 import PurchaseOrdersView from './views/PurchaseOrdersView';
+import PurchaseOrderDetailView from './views/PurchaseOrderDetailView';
 import PaymentsView from './views/PaymentsView';
 import ManufacturingView from './views/ManufacturingView';
 import WorkOrderDetailView from './views/WorkOrderDetailView';
@@ -33,7 +34,12 @@ const TAB_TO_ROUTE = {
   quotations: 'quotations',
   quotation_detail: 'quotations',
   purchase_orders: 'purchase-orders',
+  purchase_order_detail: 'purchase-orders',
+  accounting_dashboard: 'accounting/dashboard',
   payments: 'payments',
+  accounting_po_balances: 'accounting/po-balances',
+  accounting_advances: 'accounting/advances',
+  accounting_customers: 'accounting/customers',
   mrp: 'inventory-mrp',
   manufacturing: 'manufacturing',
   work_order_detail: 'manufacturing/wo',
@@ -65,7 +71,13 @@ const ROUTE_TO_TAB = {
   'leads/engine': 'lead_engine',
   'quotations': 'quotations',
   'purchase-orders': 'purchase_orders',
+  'accounting': 'accounting_dashboard',
+  'accounting/dashboard': 'accounting_dashboard',
   'payments': 'payments',
+  'accounting/payments': 'payments',
+  'accounting/po-balances': 'accounting_po_balances',
+  'accounting/advances': 'accounting_advances',
+  'accounting/customers': 'accounting_customers',
   'inventory-mrp': 'mrp',
   'mrp': 'mrp',
   'manufacturing': 'manufacturing',
@@ -94,7 +106,14 @@ const ROUTE_TO_TAB = {
   'inventory/raw-materials': 'inventory_raw_materials'
 };
 
-const getHashForTab = (tab, woId = null, quotationId = null, quotationMode = 'view') => {
+const getHashForTab = (
+  tab,
+  woId = null,
+  quotationId = null,
+  quotationMode = 'view',
+  poId = null,
+  poMode = 'view'
+) => {
   if (tab === 'work_order_detail' && woId) {
     return `#/manufacturing/wo/${woId}`;
   }
@@ -104,38 +123,61 @@ const getHashForTab = (tab, woId = null, quotationId = null, quotationMode = 'vi
     if (quotationId) return `#/quotations/${quotationId}`;
     return '#/quotations';
   }
+  if (tab === 'purchase_order_detail') {
+    if (poMode === 'create') return '#/purchase-orders/new';
+    if (poId && poMode === 'edit') return `#/purchase-orders/${poId}/edit`;
+    if (poId) return `#/purchase-orders/${poId}`;
+    return '#/purchase-orders';
+  }
   const route = TAB_TO_ROUTE[tab] || 'dashboard';
   return `#/${route}`;
 };
 
 const parseHash = () => {
   const hash = window.location.hash.replace(/^#\/?/, '').trim();
-  if (!hash) return { tab: 'dashboard', woId: null, quotationId: null, quotationMode: 'view' };
+  if (!hash) {
+    return { tab: 'dashboard', woId: null, quotationId: null, quotationMode: 'view', poId: null, poMode: 'view' };
+  }
 
   if (hash.startsWith('manufacturing/wo/')) {
     const parts = hash.split('/');
     const woId = parseInt(parts[2], 10) || null;
-    return { tab: 'work_order_detail', woId, quotationId: null, quotationMode: 'view' };
+    return { tab: 'work_order_detail', woId, quotationId: null, quotationMode: 'view', poId: null, poMode: 'view' };
   }
 
   if (hash === 'quotations/new') {
-    return { tab: 'quotation_detail', woId: null, quotationId: null, quotationMode: 'create' };
+    return { tab: 'quotation_detail', woId: null, quotationId: null, quotationMode: 'create', poId: null, poMode: 'view' };
   }
 
   if (hash.startsWith('quotations/')) {
     const parts = hash.split('/');
     const quotationId = parseInt(parts[1], 10) || null;
     if (quotationId && parts[2] === 'edit') {
-      return { tab: 'quotation_detail', woId: null, quotationId, quotationMode: 'edit' };
+      return { tab: 'quotation_detail', woId: null, quotationId, quotationMode: 'edit', poId: null, poMode: 'view' };
     }
     if (quotationId) {
-      return { tab: 'quotation_detail', woId: null, quotationId, quotationMode: 'view' };
+      return { tab: 'quotation_detail', woId: null, quotationId, quotationMode: 'view', poId: null, poMode: 'view' };
+    }
+  }
+
+  if (hash === 'purchase-orders/new') {
+    return { tab: 'purchase_order_detail', woId: null, quotationId: null, quotationMode: 'view', poId: null, poMode: 'create' };
+  }
+
+  if (hash.startsWith('purchase-orders/')) {
+    const parts = hash.split('/');
+    const poId = parseInt(parts[1], 10) || null;
+    if (poId && parts[2] === 'edit') {
+      return { tab: 'purchase_order_detail', woId: null, quotationId: null, quotationMode: 'view', poId, poMode: 'edit' };
+    }
+    if (poId) {
+      return { tab: 'purchase_order_detail', woId: null, quotationId: null, quotationMode: 'view', poId, poMode: 'view' };
     }
   }
 
   const clean = hash.split('?')[0].replace(/\/+$/, '');
   const tab = ROUTE_TO_TAB[clean] || 'dashboard';
-  return { tab, woId: null, quotationId: null, quotationMode: 'view' };
+  return { tab, woId: null, quotationId: null, quotationMode: 'view', poId: null, poMode: 'view' };
 };
 
 export default function App() {
@@ -144,11 +186,14 @@ export default function App() {
   const [inspectingWOId, setInspectingWOId] = useState(initialRoute.woId);
   const [inspectingQuotationId, setInspectingQuotationId] = useState(initialRoute.quotationId);
   const [quotationMode, setQuotationMode] = useState(initialRoute.quotationMode);
+  const [inspectingPOId, setInspectingPOId] = useState(initialRoute.poId);
+  const [poMode, setPOMode] = useState(initialRoute.poMode);
   const [currentUser, setCurrentUser] = useState(null);
   const [roles, setRoles] = useState([]);
   const [dashboardSummary, setDashboardSummary] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const mainRef = useRef(null);
 
   // Workflow handover context
   const [selectedLeadForQuote, setSelectedLeadForQuote] = useState(null);
@@ -163,13 +208,17 @@ export default function App() {
     const nextWoId = isOptsObj ? (woIdOrOpts.woId ?? null) : woIdOrOpts;
     const nextQuoteId = isOptsObj ? (woIdOrOpts.quotationId ?? null) : null;
     const nextQuoteMode = isOptsObj ? (woIdOrOpts.quotationMode ?? 'view') : 'view';
+    const nextPOId = isOptsObj ? (woIdOrOpts.poId ?? null) : null;
+    const nextPOMode = isOptsObj ? (woIdOrOpts.poMode ?? 'view') : 'view';
 
     setActiveTabState(tab);
     setInspectingWOId(nextWoId);
     setInspectingQuotationId(nextQuoteId);
     setQuotationMode(nextQuoteMode);
+    setInspectingPOId(nextPOId);
+    setPOMode(nextPOMode);
 
-    const targetHash = getHashForTab(tab, nextWoId, nextQuoteId, nextQuoteMode);
+    const targetHash = getHashForTab(tab, nextWoId, nextQuoteId, nextQuoteMode, nextPOId, nextPOMode);
     if (window.location.hash !== targetHash) {
       window.location.hash = targetHash;
     }
@@ -178,7 +227,7 @@ export default function App() {
   // Sync state if user navigates using Browser Back/Forward buttons
   useEffect(() => {
     const handleHashChange = () => {
-      const { tab, woId, quotationId, quotationMode: qMode } = parseHash();
+      const { tab, woId, quotationId, quotationMode: qMode, poId, poMode: nextPOMode } = parseHash();
       if (currentUser && !canAccessTab(currentUser, tab)) {
         const allowed = getFirstAllowedTab(currentUser);
         navigateTo(allowed);
@@ -188,6 +237,8 @@ export default function App() {
       setInspectingWOId(woId);
       setInspectingQuotationId(quotationId);
       setQuotationMode(qMode);
+      setInspectingPOId(poId);
+      setPOMode(nextPOMode);
     };
 
     window.addEventListener('hashchange', handleHashChange);
@@ -196,7 +247,14 @@ export default function App() {
 
   // Continuously ensure browser URL hash & SEO page title are synchronized with active tab and route
   useEffect(() => {
-    const targetHash = getHashForTab(activeTab, inspectingWOId, inspectingQuotationId, quotationMode);
+    const targetHash = getHashForTab(
+      activeTab,
+      inspectingWOId,
+      inspectingQuotationId,
+      quotationMode,
+      inspectingPOId,
+      poMode
+    );
     if (window.location.hash !== targetHash) {
       window.location.hash = targetHash;
     }
@@ -213,7 +271,17 @@ export default function App() {
           ? 'Edit Commercial Quotation'
           : 'View Commercial Quotation',
       purchase_orders: 'Customer Sales POs',
-      payments: 'Client Payments & Ledger',
+      purchase_order_detail:
+        poMode === 'create'
+          ? 'Create Customer Purchase Order'
+          : poMode === 'edit'
+          ? 'Edit Customer Purchase Order'
+          : 'View Customer Purchase Order',
+      accounting_dashboard: 'Accounting & Finance Dashboard',
+      payments: 'Payments & Receipts Ledger',
+      accounting_po_balances: 'PO Balances & Excess Ledger',
+      accounting_advances: 'Advances, Refunds & Excess Credits',
+      accounting_customers: 'Customer Financial Accounts',
       mrp: 'BOM Inventory & Requisitions',
       manufacturing: '5-Level Manufacturing',
       work_order_detail: 'Work Order Details',
@@ -240,7 +308,8 @@ export default function App() {
     };
     const pageTitle = TITLE_MAP[activeTab] || 'Operations';
     document.title = `${pageTitle} | SAR Manufacturing ERP — SAR Software Solutions Pvt. Ltd.`;
-  }, [activeTab, inspectingWOId, inspectingQuotationId, quotationMode]);
+    mainRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [activeTab, inspectingWOId, inspectingQuotationId, quotationMode, inspectingPOId, poMode]);
 
   const loadInitialData = async () => {
     setIsRefreshing(true);
@@ -343,7 +412,24 @@ export default function App() {
 
   const handleSelectQuoteForPO = (quote) => {
     setSelectedQuoteForPO(quote);
-    navigateTo('purchase_orders');
+    navigateTo('purchase_order_detail', { poMode: 'create' });
+  };
+
+  const handleCreatePO = () => {
+    setSelectedQuoteForPO(null);
+    navigateTo('purchase_order_detail', { poMode: 'create' });
+  };
+
+  const handleViewPO = (poId) => {
+    navigateTo('purchase_order_detail', { poId, poMode: 'view' });
+  };
+
+  const handleEditPO = (poId) => {
+    navigateTo('purchase_order_detail', { poId, poMode: 'edit' });
+  };
+
+  const handlePOModeChange = (poId, mode) => {
+    navigateTo('purchase_order_detail', { poId, poMode: mode });
   };
 
   const handleCheckMaterialsForPO = (po) => {
@@ -380,7 +466,7 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen overflow-hidden bg-slate-50/70 flex flex-col font-sans text-slate-900 antialiased">
+    <div className="h-full w-full overflow-clip bg-slate-50/70 flex flex-col font-sans text-slate-900 antialiased">
       
       {/* Top Navbar */}
       <Navbar
@@ -394,7 +480,7 @@ export default function App() {
         onToggleMobileMenu={() => setMobileMenuOpen((v) => !v)}
       />
 
-      <div className="flex-1 min-h-0 flex overflow-hidden">
+      <div className="flex-1 min-h-0 flex overflow-clip">
         
         {/* Left Sidebar (Responsive Drawer on Mobile, Fixed on Desktop) */}
         <Sidebar
@@ -402,8 +488,12 @@ export default function App() {
           activeTab={
             activeTab === 'work_order_detail'
               ? 'manufacturing'
+              : activeTab === 'lead_engine'
+              ? 'leads'
               : activeTab === 'quotation_detail'
               ? 'quotations'
+              : activeTab === 'purchase_order_detail'
+              ? 'purchase_orders'
               : activeTab
           }
           setActiveTab={(tab) => navigateTo(tab)}
@@ -423,14 +513,14 @@ export default function App() {
         />
 
         {/* Main Content Pane */}
-        <main className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5 max-w-7xl mx-auto w-full">
+        <main ref={mainRef} className="flex-1 min-w-0 overflow-y-auto overscroll-contain p-3 sm:p-5 max-w-7xl mx-auto w-full">
 
           {/* View Components */}
           {activeTab === 'dashboard' && (
             <DashboardView
               currentUser={currentUser}
               summary={dashboardSummary}
-              onNavigate={(tab) => navigateTo(tab)}
+              onNavigate={(tab, opts) => navigateTo(tab, opts)}
               onViewWorkOrder={handleViewWorkOrder}
             />
           )}
@@ -439,6 +529,8 @@ export default function App() {
             <LeadsView
               currentUser={currentUser}
               onSelectForQuotation={handleSelectLeadForQuotation}
+              onViewQuotation={handleViewQuotation}
+              onViewPO={handleViewPO}
               onOpenAudit={handleOpenAudit}
               onOpenLeadEngine={() => navigateTo('lead_engine')}
             />
@@ -459,6 +551,7 @@ export default function App() {
               onViewQuotation={handleViewQuotation}
               onEditQuotation={handleEditQuotation}
               onGeneratePO={handleSelectQuoteForPO}
+              onViewPO={handleViewPO}
               onOpenAudit={handleOpenAudit}
             />
           )}
@@ -475,6 +568,7 @@ export default function App() {
               }}
               onNavigateMode={handleQuotationModeChange}
               onGeneratePO={handleSelectQuoteForPO}
+              onViewPO={handleViewPO}
               onOpenAudit={handleOpenAudit}
               onSaved={loadInitialData}
             />
@@ -483,18 +577,43 @@ export default function App() {
           {activeTab === 'purchase_orders' && canAccessTab(currentUser, 'purchase_orders') && (
             <PurchaseOrdersView
               currentUser={currentUser}
-              preselectedQuote={selectedQuoteForPO}
+              onCreatePO={handleCreatePO}
+              onViewPO={handleViewPO}
+              onEditPO={handleEditPO}
               onCheckMaterials={handleCheckMaterialsForPO}
               onRecordPayment={handleRecordPaymentForPO}
               onOpenAudit={handleOpenAudit}
             />
           )}
 
-          {activeTab === 'payments' && canAccessTab(currentUser, 'payments') && (
+          {activeTab === 'purchase_order_detail' && canAccessTab(currentUser, 'purchase_orders') && (
+            <PurchaseOrderDetailView
+              currentUser={currentUser}
+              poId={inspectingPOId}
+              mode={poMode}
+              preselectedQuote={selectedQuoteForPO}
+              onBack={() => {
+                setSelectedQuoteForPO(null);
+                navigateTo('purchase_orders');
+              }}
+              onNavigateMode={handlePOModeChange}
+              onCheckMaterials={handleCheckMaterialsForPO}
+              onRecordPayment={handleRecordPaymentForPO}
+              onViewWorkOrder={handleViewWorkOrder}
+              onOpenAudit={handleOpenAudit}
+              onSaved={loadInitialData}
+            />
+          )}
+
+          {['accounting_dashboard', 'payments', 'accounting_po_balances', 'accounting_advances', 'accounting_customers'].includes(activeTab) &&
+            canAccessTab(currentUser, activeTab) && (
             <PaymentsView
               currentUser={currentUser}
+              section={activeTab}
+              onSectionChange={(nextTab) => navigateTo(nextTab)}
               preselectedPO={selectedPOForAction}
               onClearPreselectedPO={() => setSelectedPOForAction(null)}
+              onViewPO={handleViewPO}
               onOpenAudit={handleOpenAudit}
             />
           )}

@@ -40,6 +40,7 @@ export default function QuotationDetailView({
   onBack,
   onNavigateMode,
   onGeneratePO,
+  onViewPO,
   onOpenAudit,
   onSaved
 }) {
@@ -854,7 +855,17 @@ export default function QuotationDetailView({
               {quotation.purchase_orders.map((po) => (
                 <div key={po.id} className="px-3 py-2 flex items-center justify-between text-xs">
                   <div>
-                    <span className="font-mono font-semibold text-slate-900">{po.po_number}</span>
+                    {onViewPO ? (
+                      <button
+                        type="button"
+                        onClick={() => onViewPO(po.id)}
+                        className="font-mono font-semibold text-sky-700 hover:underline"
+                      >
+                        {po.po_number}
+                      </button>
+                    ) : (
+                      <span className="font-mono font-semibold text-slate-900">{po.po_number}</span>
+                    )}
                     <span className="text-slate-500 ml-2">Date: {po.po_date}</span>
                   </div>
                   <span className="font-semibold text-slate-900">

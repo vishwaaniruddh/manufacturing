@@ -1,40 +1,16 @@
 <?php
 // api/controllers/ManufacturingController.php
+require_once dirname(__DIR__) . '/helpers/wo_stages.php';
 
 class ManufacturingController {
     private $db;
 
     public function __construct($pdo) {
         $this->db = $pdo;
+        WorkOrderStageTracker::ensureSchema($this->db);
     }
 
-    /**
-     * Check inventory for required products based on BOM explosion
-     */
-    public function checkMaterials() {
-        $b = Response::getBody();
-        $poId = $b['po_id'] ?? null;
-        $productId = $b['product_id'] ?? null;
-        $targetQty = floatval($b['target_quantity'] ?? 0);
-
-        if (!$poId && (!$productId || $targetQty <= 0)) {
-            Response::error("Either PO ID or Product ID with Target Quantity is required");
-        }
-
-        $itemsToCheck = [];
-        if ($poId) {
-            $stmt = $this->db->prepare("SELECT product_id, quantity FROM purchase_order_items WHERE po_id = ?");
-            $stmt->execute([$poId]);
-            $itemsToCheck = $stmt->fetchAll();
-        } else {
-            $itemsToCheck[] = ['product_id' => $productId, 'quantity' => $targetQty];
-        }
-
-        if (empty($itemsToCheck)) {
-            Response::error("No items found to check materials");
-        }
-
-        // 1. Check Sub-Products / Sub-Assemblies (Multi-Level BOM)
+    private function evaluateBomForItems(array $itemsToCheck) {
         $subProductMap = [];
         foreach ($itemsToCheck as $item) {
             $subStmt = $this->db->prepare("
@@ -45,9 +21,7 @@ class ManufacturingController {
                 WHERE psa.parent_product_id = ?
             ");
             $subStmt->execute([$item['product_id']]);
-            $subs = $subStmt->fetchAll();
-
-            foreach ($subs as $sub) {
+            foreach ($subStmt->fetchAll() as $sub) {
                 $sId = $sub['sub_product_id'];
                 $requiredForThis = $sub['quantity_required'] * $item['quantity'];
 
@@ -100,8 +74,7 @@ class ManufacturingController {
             ];
         }
 
-        // 2. Check Raw Materials & Consumables
-        $materialMap = []; // raw_material_id => total_required
+        $materialMap = [];
         foreach ($itemsToCheck as $item) {
             $bomStmt = $this->db->prepare("
                 SELECT pb.raw_material_id, pb.quantity_required, rm.name, rm.sku, rm.uom, rm.current_stock, rm.unit_cost
@@ -110,9 +83,7 @@ class ManufacturingController {
                 WHERE pb.product_id = ?
             ");
             $bomStmt->execute([$item['product_id']]);
-            $boms = $bomStmt->fetchAll();
-
-            foreach ($boms as $bom) {
+            foreach ($bomStmt->fetchAll() as $bom) {
                 $rmId = $bom['raw_material_id'];
                 $requiredForThis = $bom['quantity_required'] * $item['quantity'];
 
@@ -131,7 +102,6 @@ class ManufacturingController {
             }
         }
 
-        // Analyze availability: fully, partial, or not_found
         $materialsList = [];
         $availableCount = 0;
         $totalItems = count($materialMap);
@@ -162,25 +132,26 @@ class ManufacturingController {
             ];
         }
 
-        // Combined Overall Multi-Level Status (Sub-Products + Raw Materials)
         $totalRequiredComponents = $totalItems + $totalSubItems;
         $totalAvailableComponents = $availableCount + $subAvailableCount;
+        $noBomRequired = ($totalRequiredComponents === 0);
 
-        $overallStatus = 'not_found';
-        if ($totalRequiredComponents > 0) {
-            if ($totalAvailableComponents === $totalRequiredComponents) {
-                $overallStatus = 'full'; // Eligible for manufacturing immediately
-            } elseif ($totalAvailableComponents > 0) {
-                $overallStatus = 'partial';
-            } else {
-                $overallStatus = 'not_found';
-            }
+        if ($noBomRequired) {
+            $overallStatus = 'full';
+        } elseif ($totalAvailableComponents === $totalRequiredComponents) {
+            $overallStatus = 'full';
+        } elseif ($totalAvailableComponents > 0) {
+            $overallStatus = 'partial';
+        } else {
+            $overallStatus = 'not_found';
         }
 
-        Response::success("Material inventory check completed", [
+        return [
             "material_status" => $overallStatus,
             "overall_status" => $overallStatus,
             "is_eligible_for_manufacturing" => ($overallStatus === 'full'),
+            "no_bom_required" => $noBomRequired,
+            "shortfall_count" => max(0, $totalRequiredComponents - $totalAvailableComponents),
             "available_materials_count" => $availableCount,
             "total_materials_count" => $totalItems,
             "available_sub_assemblies_count" => $subAvailableCount,
@@ -188,7 +159,121 @@ class ManufacturingController {
             "total_shortfall_cost" => $totalShortfallCost + $totalSubShortfallCost,
             "sub_assemblies" => $subAssembliesList,
             "materials" => $materialsList
-        ]);
+        ];
+    }
+
+    /**
+     * Check inventory for required products based on BOM explosion
+     */
+    public function checkMaterials() {
+        $b = Response::getBody();
+        $poId = !empty($b['po_id']) ? intval($b['po_id']) : null;
+        $productId = !empty($b['product_id']) ? intval($b['product_id']) : null;
+        $targetQty = floatval($b['target_quantity'] ?? 0);
+
+        if (!$poId && (!$productId || $targetQty <= 0)) {
+            Response::error("Either PO ID or Product ID with Target Quantity is required");
+        }
+
+        $poItemsAnnotated = [];
+        $allItemsLaunched = false;
+
+        if ($poId) {
+            $stmt = $this->db->prepare("
+                SELECT poi.id, poi.product_id, poi.quantity, p.name, p.sku, p.uom
+                FROM purchase_order_items poi
+                JOIN products p ON poi.product_id = p.id
+                WHERE poi.po_id = ?
+                ORDER BY poi.id ASC
+            ");
+            $stmt->execute([$poId]);
+            $poRawItems = $stmt->fetchAll();
+
+            if (empty($poRawItems)) {
+                Response::error("No items found in this Purchase Order");
+            }
+
+            $woStmt = $this->db->prepare("
+                SELECT id, work_order_number, product_id, target_quantity, status
+                FROM work_orders
+                WHERE po_id = ?
+                ORDER BY id ASC
+            ");
+            $woStmt->execute([$poId]);
+            $woByProduct = [];
+            foreach ($woStmt->fetchAll() as $woRow) {
+                $woByProduct[intval($woRow['product_id'])][] = [
+                    'id' => intval($woRow['id']),
+                    'work_order_number' => $woRow['work_order_number'],
+                    'target_quantity' => intval($woRow['target_quantity']),
+                    'status' => $woRow['status']
+                ];
+            }
+
+            $unlaunchedCheckItems = [];
+            $allCheckItems = [];
+
+            foreach ($poRawItems as $item) {
+                $pId = intval($item['product_id']);
+                $orderedQty = floatval($item['quantity']);
+                $launchedList = $woByProduct[$pId] ?? [];
+                $launchedQty = array_reduce($launchedList, function ($sum, $w) {
+                    return $sum + floatval($w['target_quantity']);
+                }, 0.0);
+                $remainingQty = max(0.0, $orderedQty - $launchedQty);
+
+                $evalQty = $remainingQty > 0 ? $remainingQty : $orderedQty;
+                $itemEval = $this->evaluateBomForItems([['product_id' => $pId, 'quantity' => $evalQty]]);
+
+                $poItemsAnnotated[] = [
+                    'id' => intval($item['id']),
+                    'product_id' => $pId,
+                    'sku' => $item['sku'],
+                    'name' => $item['name'],
+                    'uom' => $item['uom'],
+                    'ordered_qty' => $orderedQty,
+                    'launched_qty' => $launchedQty,
+                    'remaining_qty' => $remainingQty,
+                    'is_launched' => ($remainingQty <= 0),
+                    'launched_work_orders' => $launchedList,
+                    'is_bom_eligible' => $itemEval['is_eligible_for_manufacturing'],
+                    'no_bom_required' => $itemEval['no_bom_required'],
+                    'shortfall_count' => $itemEval['shortfall_count'],
+                    'shortfall_cost' => $itemEval['total_shortfall_cost']
+                ];
+
+                $allCheckItems[] = ['product_id' => $pId, 'quantity' => $orderedQty];
+                if ($remainingQty > 0) {
+                    $unlaunchedCheckItems[] = ['product_id' => $pId, 'quantity' => $remainingQty];
+                }
+            }
+
+            if ($productId) {
+                $matched = null;
+                foreach ($poItemsAnnotated as $pi) {
+                    if ($pi['product_id'] === $productId) {
+                        $matched = $pi;
+                        break;
+                    }
+                }
+                $qtyUse = $targetQty > 0 ? $targetQty : ($matched ? ($matched['remaining_qty'] > 0 ? $matched['remaining_qty'] : $matched['ordered_qty']) : 1);
+                $itemsToCheck = [['product_id' => $productId, 'quantity' => $qtyUse]];
+            } elseif (!empty($unlaunchedCheckItems)) {
+                $itemsToCheck = $unlaunchedCheckItems;
+            } else {
+                $allItemsLaunched = true;
+                $itemsToCheck = $allCheckItems;
+            }
+        } else {
+            $itemsToCheck = [['product_id' => $productId, 'quantity' => $targetQty]];
+        }
+
+        $result = $this->evaluateBomForItems($itemsToCheck);
+        $result['po_items'] = $poItemsAnnotated;
+        $result['all_items_launched'] = $allItemsLaunched;
+        $result['focused_product_id'] = $productId;
+
+        Response::success("Material inventory check completed", $result);
     }
 
     /**
@@ -217,7 +302,7 @@ class ManufacturingController {
             $stmt->execute([
                 $reqNumber,
                 $b['po_id'],
-                !empty($b['requested_by']) ? intval($b['requested_by']) : 3, // default to Production Manager
+                Response::resolveUserId($this->db, $b['requested_by'] ?? null),
                 $totalEstCost,
                 $b['remarks'] ?? 'Shortfall materials requested for production fulfillment'
             ]);
@@ -349,7 +434,9 @@ class ManufacturingController {
                    p.name as product_name, p.sku as product_sku, p.uom,
                    (SELECT COUNT(*) FROM manufacturing_stages ms WHERE ms.work_order_id = wo.id) as total_stages,
                    (SELECT COUNT(*) FROM quality_inspections qi WHERE qi.work_order_id = wo.id) as inspection_count,
-                   (SELECT COUNT(*) FROM dispatches d WHERE d.work_order_id = wo.id) as dispatch_count
+                   (SELECT COUNT(*) FROM dispatches d WHERE d.work_order_id = wo.id) as dispatch_count,
+                   (SELECT COUNT(*) FROM work_order_components woc WHERE woc.work_order_id = wo.id AND woc.status = 'rework') as rework_components_count,
+                   (SELECT COUNT(DISTINCT wocs.level_number) FROM work_order_component_stages wocs WHERE wocs.work_order_id = wo.id AND (wocs.pending_qty + wocs.rework_qty) > 0) as active_levels_count
             FROM work_orders wo
             JOIN purchase_orders po ON wo.po_id = po.id
             JOIN customers c ON po.customer_id = c.id
@@ -361,7 +448,7 @@ class ManufacturingController {
     }
 
     /**
-     * Work Order Details with 5 Levels & QC Inspections
+     * Work Order Details with Independent Per-Component & Per-Unit 5-Level QC Progression
      */
     public function getWorkOrder($id) {
         $stmt = $this->db->prepare("
@@ -381,48 +468,233 @@ class ManufacturingController {
             Response::error("Work order not found", 404);
         }
 
-        // 5 Stages
+        // Guarantee per-component & per-unit stage tracker rows exist (and backfill historical runs if needed)
+        WorkOrderStageTracker::ensureSeeded($this->db, $id, $wo);
+
+        // Refresh WO header after potential backfill/reconciliation
+        $stmt->execute([$id]);
+        $wo = $stmt->fetch();
+
+        // Fetch authoritative per-component summary
+        $compStmt = $this->db->prepare("
+            SELECT woc.id as component_id, woc.work_order_id, woc.product_id, woc.item_type,
+                   woc.role_notes, woc.target_quantity, woc.passed_quantity, woc.rejected_quantity,
+                   woc.current_level, woc.status as component_status,
+                   woc.last_defect_reason, woc.last_remarks, woc.updated_at,
+                   p.name as product_name, p.sku as product_sku, p.uom
+            FROM work_order_components woc
+            JOIN products p ON woc.product_id = p.id
+            WHERE woc.work_order_id = ?
+            ORDER BY (woc.item_type = 'finished_good') DESC, woc.id ASC
+        ");
+        $compStmt->execute([$id]);
+        $components = $compStmt->fetchAll();
+
+        // Fetch authoritative per-component, per-level unit distribution
+        $wocsStmt = $this->db->prepare("
+            SELECT * FROM work_order_component_stages
+            WHERE work_order_id = ?
+            ORDER BY component_id ASC, level_number ASC
+        ");
+        $wocsStmt->execute([$id]);
+        $wocsByCompLvl = [];
+        foreach ($wocsStmt->fetchAll() as $sr) {
+            $wocsByCompLvl[intval($sr['component_id'])][intval($sr['level_number'])] = $sr;
+        }
+
+        foreach ($components as &$cRef) {
+            $cid = intval($cRef['component_id']);
+            $dist = [];
+            for ($l = 1; $l <= 5; $l++) {
+                $sr = $wocsByCompLvl[$cid][$l] ?? null;
+                $dist[$l] = [
+                    'pending_qty' => $sr ? intval($sr['pending_qty']) : 0,
+                    'rework_qty' => $sr ? intval($sr['rework_qty']) : 0,
+                    'passed_qty' => $sr ? intval($sr['passed_qty']) : 0
+                ];
+            }
+            $cRef['stage_distribution'] = $dist;
+        }
+        unset($cRef);
+        $wo['product_components'] = $components;
+
+        // Fetch the 5 sequential stages (without duplicating rows when multiple inspections occurred)
         $sStmt = $this->db->prepare("
-            SELECT ms.*,
-                   qi.id as inspection_id, qi.inspector_name, qi.passed_qty, qi.rejected_qty,
-                   qi.qc_status, qi.remarks as qc_remarks, qi.defect_reason, qi.inspection_date
+            SELECT ms.*
             FROM manufacturing_stages ms
-            LEFT JOIN quality_inspections qi ON ms.id = qi.stage_id
             WHERE ms.work_order_id = ?
             ORDER BY ms.level_number ASC
         ");
         $sStmt->execute([$id]);
         $stages = $sStmt->fetchAll();
 
-        // Attach inspected items to each stage
-        foreach ($stages as &$st) {
-            if (!empty($st['inspection_id'])) {
-                $qiiStmt = $this->db->prepare("
-                    SELECT qii.*, p.name as product_name, p.sku as product_sku, p.uom, p.product_type
-                    FROM quality_inspection_items qii
-                    JOIN products p ON qii.product_id = p.id
-                    WHERE qii.inspection_id = ?
-                ");
-                $qiiStmt->execute([$st['inspection_id']]);
-                $st['inspected_items'] = $qiiStmt->fetchAll();
-            } else {
-                $st['inspected_items'] = [];
-            }
-        }
-        $wo['stages'] = $stages;
-
-        // Fetch product components (Finished Good + Sub-Assemblies)
-        $compStmt = $this->db->prepare("
-            SELECT p.id as product_id, p.name as product_name, p.sku as product_sku, p.uom, 'finished_good' as item_type, ? as target_quantity, 'Primary Finished Good' as role_notes
-            FROM products p WHERE p.id = ?
-            UNION ALL
-            SELECT sp.id as product_id, sp.name as product_name, sp.sku as product_sku, sp.uom, 'sub_product' as item_type, (psa.quantity_required * ?) as target_quantity, psa.notes as role_notes
-            FROM product_sub_assemblies psa
-            JOIN products sp ON psa.sub_product_id = sp.id
-            WHERE psa.parent_product_id = ?
+        $latestInspStmt = $this->db->prepare("
+            SELECT id, inspector_name, passed_qty, rejected_qty, qc_status, remarks, defect_reason, inspection_date
+            FROM quality_inspections
+            WHERE stage_id = ?
+            ORDER BY id DESC
         ");
-        $compStmt->execute([$wo['target_quantity'], $wo['product_id'], $wo['target_quantity'], $wo['product_id']]);
-        $wo['product_components'] = $compStmt->fetchAll();
+
+        $stageItemHistStmt = $this->db->prepare("
+            SELECT qii.*, qi.inspector_name, qi.inspection_date
+            FROM quality_inspection_items qii
+            JOIN quality_inspections qi ON qii.inspection_id = qi.id
+            WHERE qi.stage_id = ?
+            ORDER BY qi.id DESC, qii.id DESC
+        ");
+
+        foreach ($stages as &$st) {
+            $lvl = intval($st['level_number']);
+
+            $latestInspStmt->execute([$st['id']]);
+            $inspRuns = $latestInspStmt->fetchAll();
+            $latestInsp = $inspRuns[0] ?? null;
+
+            $st['inspection_runs'] = count($inspRuns);
+            $st['inspection_id'] = $latestInsp['id'] ?? null;
+            $st['inspector_name'] = $latestInsp['inspector_name'] ?? null;
+            $st['passed_qty'] = $latestInsp['passed_qty'] ?? null;
+            $st['rejected_qty'] = $latestInsp['rejected_qty'] ?? 0;
+            $st['qc_status'] = $latestInsp['qc_status'] ?? null;
+            $st['qc_remarks'] = $latestInsp['remarks'] ?? null;
+            $st['defect_reason'] = $latestInsp['defect_reason'] ?? null;
+            $st['inspection_date'] = $latestInsp['inspection_date'] ?? null;
+
+            // Latest QC row per product/type at this specific stage
+            $stageItemHistStmt->execute([$st['id']]);
+            $latestItemByKey = [];
+            foreach ($stageItemHistStmt->fetchAll() as $histRow) {
+                $k = intval($histRow['product_id']) . ':' . ($histRow['item_type'] ?? 'finished_good');
+                if (!isset($latestItemByKey[$k])) {
+                    $latestItemByKey[$k] = $histRow;
+                }
+            }
+
+            $stageItems = [];
+            $readyCount = 0;
+            $reworkCount = 0;
+            $clearedCount = 0;
+            $heldBelowCount = 0;
+            $readyUnits = 0;
+            $pendingUnits = 0;
+            $reworkUnits = 0;
+            $passedUnits = 0;
+            $waitingUpstreamUnits = 0;
+
+            foreach ($components as $comp) {
+                $cid = intval($comp['component_id']);
+                $totalTarget = intval($comp['target_quantity']);
+                $sr = $wocsByCompLvl[$cid][$lvl] ?? [
+                    'pending_qty' => 0,
+                    'rework_qty' => 0,
+                    'passed_qty' => 0,
+                    'rejected_qty' => 0,
+                    'defect_reason' => null,
+                    'remarks' => null,
+                    'inspector_name' => null
+                ];
+                $k = intval($comp['product_id']) . ':' . $comp['item_type'];
+                $hist = $latestItemByKey[$k] ?? null;
+
+                $pend = intval($sr['pending_qty']);
+                $rew = intval($sr['rework_qty']);
+                $pas = intval($sr['passed_qty']);
+                $inspectableQty = $pend + $rew;
+
+                $upstreamPool = 0;
+                $firstActiveUpstreamLvl = null;
+                for ($uLvl = 1; $uLvl < $lvl; $uLvl++) {
+                    $usr = $wocsByCompLvl[$cid][$uLvl] ?? ['pending_qty' => 0, 'rework_qty' => 0];
+                    $uPool = intval($usr['pending_qty']) + intval($usr['rework_qty']);
+                    if ($uPool > 0) {
+                        $upstreamPool += $uPool;
+                        if ($firstActiveUpstreamLvl === null) {
+                            $firstActiveUpstreamLvl = $uLvl;
+                        }
+                    }
+                }
+
+                if ($inspectableQty === 0 && $pas >= $totalTarget) {
+                    $clearedCount++;
+                    $compStageState = 'passed_next';
+                } elseif ($rew > 0) {
+                    $readyCount++;
+                    $reworkCount++;
+                    $compStageState = 'stuck_rework';
+                } elseif ($pend > 0) {
+                    $readyCount++;
+                    $compStageState = 'ready_for_qc';
+                } elseif ($pas > 0) {
+                    $compStageState = 'partial_passed_waiting';
+                } else {
+                    $compStageState = 'waiting_previous';
+                }
+
+                if ($upstreamPool > 0) {
+                    $heldBelowCount++;
+                    $waitingUpstreamUnits += $upstreamPool;
+                }
+
+                $readyUnits += $inspectableQty;
+                $pendingUnits += $pend;
+                $reworkUnits += $rew;
+                $passedUnits += $pas;
+
+                $defaultRemark = $clearedCount > 0 && $compStageState === 'passed_next'
+                    ? 'Cleared stage specifications'
+                    : ($compStageState === 'stuck_rework'
+                        ? ($sr['defect_reason'] ?: ($hist['defect_reason'] ?? 'Held for rework at Level ' . $lvl))
+                        : ($compStageState === 'ready_for_qc'
+                            ? "{$inspectableQty} unit(s) queued for Level {$lvl} QC"
+                            : ($compStageState === 'partial_passed_waiting'
+                                ? "{$pas} unit(s) advanced; awaiting {$upstreamPool} unit(s) from Level {$firstActiveUpstreamLvl}"
+                                : ($firstActiveUpstreamLvl ? "Waiting — {$upstreamPool} unit(s) at Level {$firstActiveUpstreamLvl}" : 'Awaiting prior level'))));
+
+                $stageItems[] = [
+                    'component_id' => $cid,
+                    'product_id' => intval($comp['product_id']),
+                    'product_name' => $comp['product_name'],
+                    'product_sku' => $comp['product_sku'],
+                    'uom' => $comp['uom'],
+                    'item_type' => $comp['item_type'],
+                    'role_notes' => $comp['role_notes'],
+                    'target_quantity' => $totalTarget,
+                    'inspectable_qty' => $inspectableQty,
+                    'pending_qty' => $pend,
+                    'rework_qty' => $rew,
+                    'passed_qty' => $pas,
+                    'rejected_qty' => $rew > 0 ? $rew : 0,
+                    'upstream_waiting_qty' => $upstreamPool,
+                    'upstream_level' => $firstActiveUpstreamLvl,
+                    'current_component_level' => intval($comp['current_level']),
+                    'component_status' => $comp['component_status'],
+                    'component_stage_state' => $compStageState,
+                    'qc_status' => ($compStageState === 'passed_next')
+                        ? 'passed'
+                        : (($compStageState === 'stuck_rework')
+                            ? 'rework'
+                            : (($compStageState === 'ready_for_qc') ? 'in_progress' : 'queued')),
+                    'defect_reason' => ($rew > 0) ? ($sr['defect_reason'] ?: ($hist['defect_reason'] ?? null)) : ($sr['defect_reason'] ?? null),
+                    'remarks' => ($rew > 0 && !empty($sr['defect_reason'])) ? $sr['defect_reason'] : ($sr['remarks'] ?: $defaultRemark),
+                    'inspector_name' => $sr['inspector_name'] ?: ($hist['inspector_name'] ?? null)
+                ];
+            }
+
+            $st['ready_count'] = $readyCount;
+            $st['rework_count'] = $reworkCount;
+            $st['cleared_count'] = $clearedCount;
+            $st['held_below_count'] = $heldBelowCount;
+            $st['ready_units'] = $readyUnits;
+            $st['pending_units'] = $pendingUnits;
+            $st['rework_units'] = $reworkUnits;
+            $st['passed_units'] = $passedUnits;
+            $st['waiting_upstream_units'] = $waitingUpstreamUnits;
+            $st['total_components'] = count($components);
+            $st['can_inspect'] = ($readyCount > 0 && $readyUnits > 0);
+            $st['inspected_items'] = $stageItems;
+        }
+        unset($st);
+        $wo['stages'] = $stages;
 
         // Dispatches
         $dStmt = $this->db->prepare("
@@ -527,6 +799,26 @@ class ManufacturingController {
                     $startedAt,
                     $operator
                 ]);
+            }
+
+            // Initialize per-component & per-unit 5-level tracking rows (Finished Good + Sub-Assemblies)
+            $compIns = $this->db->prepare("
+                INSERT INTO work_order_components
+                (work_order_id, product_id, item_type, role_notes, target_quantity, passed_quantity, rejected_quantity, current_level, status)
+                VALUES (?, ?, ?, ?, ?, 0, 0, 1, 'in_progress')
+            ");
+            $compIns->execute([$woId, $productId, 'finished_good', 'Primary Finished Good', $targetQty]);
+            WorkOrderStageTracker::seedStagesForComponent($this->db, $woId, $this->db->lastInsertId(), $targetQty);
+            foreach ($subs as $sub) {
+                $subQty = intval(round(floatval($sub['quantity_required']) * $targetQty));
+                $compIns->execute([
+                    $woId,
+                    intval($sub['sub_product_id']),
+                    'sub_product',
+                    $sub['notes'] ?? null,
+                    $subQty
+                ]);
+                WorkOrderStageTracker::seedStagesForComponent($this->db, $woId, $this->db->lastInsertId(), $subQty);
             }
 
             // Update PO status to in_production

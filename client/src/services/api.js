@@ -124,10 +124,22 @@ export const api = {
   getPurchaseOrders: () => request('purchase_orders'),
   getPurchaseOrder: (id) => request(`purchase_orders/${id}`),
   createPurchaseOrder: (data) => request('purchase_orders', { method: 'POST', body: JSON.stringify(data) }),
+  updatePurchaseOrder: (id, data) => request(`purchase_orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePurchaseOrder: (id) => request(`purchase_orders/${id}`, { method: 'DELETE' }),
 
   // Payments
   getPayments: (poId) => request(`payments${poId ? `?po_id=${poId}` : ''}`),
+  getPaymentsLedger: (params = {}) => {
+    const q = new URLSearchParams(
+      Object.fromEntries(Object.entries(params).filter(([, v]) => v !== '' && v !== null && v !== undefined))
+    ).toString();
+    return request(`payments/ledger${q ? `?${q}` : ''}`);
+  },
   recordPayment: (data) => request('payments', { method: 'POST', body: JSON.stringify(data) }),
+  updatePayment: (id, data) => request(`payments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updatePaymentStatus: (id, data) => request(`payments/${id}/status`, { method: 'POST', body: JSON.stringify(data) }),
+  deletePayment: (id) => request(`payments/${id}`, { method: 'DELETE' }),
+  settleExcessPayment: (data) => request('payments/settle_excess', { method: 'POST', body: JSON.stringify(data) }),
   getPaymentSummary: (poId) => request(`payments/summary/${poId}`),
 
   // Manufacturing & MRP

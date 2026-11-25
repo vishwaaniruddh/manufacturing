@@ -26,7 +26,8 @@ import {
   Wallet,
   Package,
   Ticket,
-  Sparkles
+  BarChart3,
+  ArrowRightLeft
 } from 'lucide-react';
 import { canAccessTab } from '../utils/rbac';
 
@@ -73,10 +74,19 @@ export default function Sidebar({
       items: [
         { id: 'dashboard', label: 'Dashboard Overview', icon: LayoutDashboard },
         { id: 'leads', label: 'Leads Inward & Approval', icon: UserCheck, badge: counts.leads },
-        { id: 'lead_engine', label: 'Lead Creation Engine', icon: Sparkles },
         { id: 'quotations', label: 'Commercial Quotations', icon: FileSpreadsheet, badge: counts.quotations },
-        { id: 'purchase_orders', label: 'Customer Sales POs', icon: FileCheck2, badge: counts.pos },
-        { id: 'payments', label: 'Client Payments', icon: CreditCard, badge: counts.payments }
+        { id: 'purchase_orders', label: 'Customer Sales POs', icon: FileCheck2, badge: counts.pos }
+      ]
+    },
+    {
+      key: 'accounting',
+      title: 'Accounting & Finance',
+      items: [
+        { id: 'accounting_dashboard', label: 'Accounting Dashboard', icon: BarChart3 },
+        { id: 'payments', label: 'Payments & Receipts', icon: CreditCard, badge: counts.payments },
+        { id: 'accounting_po_balances', label: 'PO Balances & Dues', icon: Wallet },
+        { id: 'accounting_advances', label: 'Advances & Excess', icon: ArrowRightLeft },
+        { id: 'accounting_customers', label: 'Customer Accounts', icon: Users }
       ]
     },
     {
@@ -186,13 +196,13 @@ export default function Sidebar({
         />
       )}
       <aside
-        className={`fixed md:static inset-y-0 left-0 z-40 w-60 md:w-56 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 h-[calc(100vh-3.25rem)] md:h-full text-slate-300 transform transition-transform duration-200 ease-in-out ${
-          mobileOpen ? 'translate-x-0 top-13' : '-translate-x-full md:translate-x-0'
+        className={`fixed md:static inset-y-0 left-0 z-40 w-60 md:w-56 bg-slate-900 border-r border-slate-800 flex flex-col flex-shrink-0 h-[calc(100%-3.25rem)] md:h-full text-slate-300 transform transition-transform duration-200 ease-in-out ${
+          mobileOpen ? 'translate-x-0 top-[3.25rem]' : '-translate-x-full md:translate-x-0'
         }`}
       >
         <div
           onScroll={handleSidebarScroll}
-          className={`p-2.5 space-y-4 flex-1 overflow-y-auto sidebar-scroll ${isScrolling ? 'is-scrolling' : ''}`}
+          className={`p-2.5 space-y-4 flex-1 overflow-y-auto overscroll-contain sidebar-scroll ${isScrolling ? 'is-scrolling' : ''}`}
         >
           {/* SUPERADMIN MENU (Top Accordion) */}
           {showSuperadmin && (

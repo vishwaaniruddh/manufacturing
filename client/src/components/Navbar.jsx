@@ -76,7 +76,7 @@ export default function Navbar({
 
   return (
     <>
-      <header className="bg-slate-900 text-slate-100 border-b border-slate-800 sticky top-0 z-30 shadow-xs h-13">
+      <header className="bg-slate-900 text-slate-100 border-b border-slate-800 shrink-0 z-30 shadow-xs h-[3.25rem]">
         <div className="max-w-7xl mx-auto px-3 sm:px-5 h-full flex items-center justify-between gap-2">
           {/* Brand / Logo + Mobile Menu Toggle */}
           <div className="flex items-center space-x-2 min-w-0">

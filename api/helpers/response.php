@@ -54,4 +54,25 @@ class Response {
         $data = json_decode($raw, true);
         return is_array($data) ? $data : [];
     }
+
+    public static function resolveUserId($pdo, $requestedId = null, $allowNull = false) {
+        $uid = !empty($requestedId) ? intval($requestedId) : 0;
+        if ($uid > 0) {
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE id = ? LIMIT 1");
+            $stmt->execute([$uid]);
+            $found = $stmt->fetchColumn();
+            if ($found) {
+                return intval($found);
+            }
+        }
+        if ($allowNull) {
+            return null;
+        }
+        $fallback = $pdo->query("SELECT id FROM users WHERE status = 'active' ORDER BY id ASC LIMIT 1")->fetchColumn();
+        if ($fallback) {
+            return intval($fallback);
+        }
+        $anyUser = $pdo->query("SELECT id FROM users ORDER BY id ASC LIMIT 1")->fetchColumn();
+        return $anyUser ? intval($anyUser) : null;
+    }
 }

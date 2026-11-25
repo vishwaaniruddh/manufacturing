@@ -299,11 +299,12 @@ class MastersController {
         Response::success("Vendor deleted");
     }
 
-    // 7. PRODUCTS (Finished Goods)
+    // 7. PRODUCTS (Finished Goods & Sub-Assemblies)
     public function getProducts() {
         $stmt = $this->db->query("
             SELECT p.*, 
-                   (SELECT COUNT(*) FROM product_boms pb WHERE pb.product_id = p.id) as bom_item_count 
+                   (SELECT COUNT(*) FROM product_boms pb WHERE pb.product_id = p.id) as bom_item_count,
+                   (SELECT COUNT(*) FROM product_sub_assemblies psa WHERE psa.parent_product_id = p.id) as sub_assembly_count
             FROM products p 
             ORDER BY p.name ASC
         ");
@@ -312,10 +313,11 @@ class MastersController {
         // Attach Sub-Assemblies & Raw Material BOM breakdown
         foreach ($products as &$p) {
             $subStmt = $this->db->prepare("
-                SELECT psa.*, sp.name as sub_product_name, sp.sku as sub_product_sku, sp.uom, sp.current_stock, sp.unit_price as unit_cost, sp.category
+                SELECT psa.*, sp.name as sub_product_name, sp.sku as sub_product_sku, sp.uom, sp.current_stock, sp.unit_price as unit_cost, sp.category, sp.product_type as sub_product_type
                 FROM product_sub_assemblies psa
                 JOIN products sp ON psa.sub_product_id = sp.id
                 WHERE psa.parent_product_id = ?
+                ORDER BY psa.id ASC
             ");
             $subStmt->execute([$p['id']]);
             $p['sub_assemblies'] = $subStmt->fetchAll();
@@ -325,6 +327,7 @@ class MastersController {
                 FROM product_boms pb 
                 JOIN raw_materials rm ON pb.raw_material_id = rm.id 
                 WHERE pb.product_id = ?
+                ORDER BY pb.id ASC
             ");
             $bomStmt->execute([$p['id']]);
             $p['bom'] = $bomStmt->fetchAll();
@@ -333,40 +336,118 @@ class MastersController {
         Response::success("Products fetched", $products);
     }
 
+    private function assertNoSubAssemblyCycle($parentId, $subProductId) {
+        if ($parentId === $subProductId) {
+            throw new Exception("A product cannot be assigned as its own sub-assembly");
+        }
+        $visited = [$parentId => true];
+        $queue = [$subProductId];
+        $stmt = $this->db->prepare("SELECT sub_product_id FROM product_sub_assemblies WHERE parent_product_id = ?");
+        while (!empty($queue)) {
+            $curr = array_shift($queue);
+            if ($curr === $parentId) {
+                throw new Exception("Circular sub-assembly reference detected");
+            }
+            if (isset($visited[$curr])) {
+                continue;
+            }
+            $visited[$curr] = true;
+            $stmt->execute([$curr]);
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $childId) {
+                $childId = intval($childId);
+                if ($childId === $parentId) {
+                    throw new Exception("Circular sub-assembly reference detected");
+                }
+                if (!isset($visited[$childId])) {
+                    $queue[] = $childId;
+                }
+            }
+        }
+    }
+
+    private function syncProductRecipe($productId, $b) {
+        $productId = intval($productId);
+
+        if (isset($b['bom']) && is_array($b['bom'])) {
+            $this->db->prepare("DELETE FROM product_boms WHERE product_id = ?")->execute([$productId]);
+            $mergedBom = [];
+            foreach ($b['bom'] as $item) {
+                $rmId = intval($item['raw_material_id'] ?? 0);
+                $qty = floatval($item['quantity_required'] ?? 0);
+                if ($rmId > 0 && $qty > 0) {
+                    $mergedBom[$rmId] = ($mergedBom[$rmId] ?? 0) + $qty;
+                }
+            }
+            if (!empty($mergedBom)) {
+                $bStmt = $this->db->prepare("INSERT INTO product_boms (product_id, raw_material_id, quantity_required) VALUES (?, ?, ?)");
+                foreach ($mergedBom as $rmId => $qty) {
+                    $bStmt->execute([$productId, $rmId, $qty]);
+                }
+            }
+        }
+
+        if (isset($b['sub_assemblies']) && is_array($b['sub_assemblies'])) {
+            $this->db->prepare("DELETE FROM product_sub_assemblies WHERE parent_product_id = ?")->execute([$productId]);
+            $mergedSubs = [];
+            foreach ($b['sub_assemblies'] as $sub) {
+                $subId = intval($sub['sub_product_id'] ?? 0);
+                $qty = floatval($sub['quantity_required'] ?? 0);
+                if ($subId > 0 && $qty > 0) {
+                    $this->assertNoSubAssemblyCycle($productId, $subId);
+                    if (!isset($mergedSubs[$subId])) {
+                        $mergedSubs[$subId] = ['qty' => 0.0, 'notes' => null];
+                    }
+                    $mergedSubs[$subId]['qty'] += $qty;
+                    $note = trim((string)($sub['notes'] ?? ''));
+                    if ($note !== '') {
+                        $mergedSubs[$subId]['notes'] = $note;
+                    }
+                }
+            }
+            if (!empty($mergedSubs)) {
+                $sStmt = $this->db->prepare("INSERT INTO product_sub_assemblies (parent_product_id, sub_product_id, quantity_required, notes) VALUES (?, ?, ?, ?)");
+                foreach ($mergedSubs as $subId => $meta) {
+                    $sStmt->execute([$productId, $subId, $meta['qty'], $meta['notes']]);
+                }
+            }
+        }
+    }
+
     public function createProduct() {
         $b = Response::getBody();
         if (empty($b['sku']) || empty($b['name'])) {
             Response::error("Product SKU and Name are required");
         }
 
+        $sku = trim($b['sku']);
+        $productType = in_array($b['product_type'] ?? '', ['finished_good', 'sub_assembly'], true)
+            ? $b['product_type']
+            : (stripos($sku, 'SUB-') === 0 ? 'sub_assembly' : 'finished_good');
+
         $this->db->beginTransaction();
         try {
             $stmt = $this->db->prepare("
-                INSERT INTO products (sku, name, description, category, uom, unit_price, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO products (sku, name, description, category, product_type, uom, unit_price, current_stock, reorder_level, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ");
             $stmt->execute([
-                $b['sku'],
-                $b['name'],
+                $sku,
+                trim($b['name']),
                 $b['description'] ?? null,
                 $b['category'] ?? 'Industrial',
+                $productType,
                 $b['uom'] ?? 'Units',
                 floatval($b['unit_price'] ?? 0),
+                floatval($b['current_stock'] ?? 0),
+                floatval($b['reorder_level'] ?? 5),
                 $b['status'] ?? 'active'
             ]);
-            $productId = $this->db->lastInsertId();
+            $productId = intval($this->db->lastInsertId());
 
-            if (!empty($b['bom']) && is_array($b['bom'])) {
-                $bStmt = $this->db->prepare("INSERT INTO product_boms (product_id, raw_material_id, quantity_required) VALUES (?, ?, ?)");
-                foreach ($b['bom'] as $item) {
-                    if (!empty($item['raw_material_id']) && !empty($item['quantity_required'])) {
-                        $bStmt->execute([$productId, intval($item['raw_material_id']), floatval($item['quantity_required'])]);
-                    }
-                }
-            }
+            $this->syncProductRecipe($productId, $b);
 
             $this->db->commit();
-            Response::success("Product created with BOM", ["id" => $productId], 201);
+            Response::success("Product created with BOM & sub-assemblies", ["id" => $productId], 201);
         } catch (Exception $e) {
             $this->db->rollBack();
             Response::error("Failed to create product: " . $e->getMessage());
@@ -375,36 +456,48 @@ class MastersController {
 
     public function updateProduct($id) {
         $b = Response::getBody();
+        $id = intval($id);
+        $existingStmt = $this->db->prepare("SELECT * FROM products WHERE id = ?");
+        $existingStmt->execute([$id]);
+        $existing = $existingStmt->fetch();
+        if (!$existing) {
+            Response::error("Product not found", 404);
+        }
+
+        $sku = trim($b['sku'] ?? $existing['sku']);
+        $name = trim($b['name'] ?? $existing['name']);
+        if ($sku === '' || $name === '') {
+            Response::error("Product SKU and Name are required");
+        }
+        $productType = in_array($b['product_type'] ?? '', ['finished_good', 'sub_assembly'], true)
+            ? $b['product_type']
+            : ($existing['product_type'] ?? 'finished_good');
+
         $this->db->beginTransaction();
         try {
             $stmt = $this->db->prepare("
                 UPDATE products 
-                SET sku = ?, name = ?, description = ?, category = ?, uom = ?, unit_price = ?, status = ? 
+                SET sku = ?, name = ?, description = ?, category = ?, product_type = ?, uom = ?, unit_price = ?, current_stock = ?, reorder_level = ?, status = ? 
                 WHERE id = ?
             ");
             $stmt->execute([
-                $b['sku'],
-                $b['name'],
-                $b['description'] ?? null,
-                $b['category'] ?? 'Industrial',
-                $b['uom'] ?? 'Units',
-                floatval($b['unit_price'] ?? 0),
-                $b['status'] ?? 'active',
+                $sku,
+                $name,
+                array_key_exists('description', $b) ? $b['description'] : $existing['description'],
+                $b['category'] ?? $existing['category'] ?? 'Industrial',
+                $productType,
+                $b['uom'] ?? $existing['uom'] ?? 'Units',
+                array_key_exists('unit_price', $b) ? floatval($b['unit_price']) : floatval($existing['unit_price']),
+                array_key_exists('current_stock', $b) ? floatval($b['current_stock']) : floatval($existing['current_stock']),
+                array_key_exists('reorder_level', $b) ? floatval($b['reorder_level']) : floatval($existing['reorder_level']),
+                $b['status'] ?? $existing['status'] ?? 'active',
                 $id
             ]);
 
-            if (isset($b['bom']) && is_array($b['bom'])) {
-                $this->db->prepare("DELETE FROM product_boms WHERE product_id = ?")->execute([$id]);
-                $bStmt = $this->db->prepare("INSERT INTO product_boms (product_id, raw_material_id, quantity_required) VALUES (?, ?, ?)");
-                foreach ($b['bom'] as $item) {
-                    if (!empty($item['raw_material_id']) && !empty($item['quantity_required'])) {
-                        $bStmt->execute([$id, intval($item['raw_material_id']), floatval($item['quantity_required'])]);
-                    }
-                }
-            }
+            $this->syncProductRecipe($id, $b);
 
             $this->db->commit();
-            Response::success("Product updated successfully");
+            Response::success("Product & BOM updated successfully");
         } catch (Exception $e) {
             $this->db->rollBack();
             Response::error("Failed to update product: " . $e->getMessage());

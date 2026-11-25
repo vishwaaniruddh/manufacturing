@@ -27,7 +27,40 @@ class QuotationController {
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
-        Response::success("Quotations fetched", $stmt->fetchAll());
+        $rows = $stmt->fetchAll();
+
+        if (!empty($rows)) {
+            $poStmt = $this->db->query("
+                SELECT po.id, po.po_number, po.customer_po_reference, po.quotation_id, po.status, po.total_amount, q.lead_id
+                FROM purchase_orders po
+                JOIN quotations q ON po.quotation_id = q.id
+                ORDER BY po.id DESC
+            ");
+            $posByQuote = [];
+            $posByLead = [];
+            foreach ($poStmt->fetchAll() as $po) {
+                $entry = [
+                    'id' => intval($po['id']),
+                    'po_number' => $po['po_number'],
+                    'customer_po_reference' => $po['customer_po_reference'],
+                    'status' => $po['status'],
+                    'total_amount' => floatval($po['total_amount'])
+                ];
+                $posByQuote[intval($po['quotation_id'])][] = $entry;
+                $posByLead[intval($po['lead_id'])][] = $entry;
+            }
+            foreach ($rows as &$r) {
+                $qId = intval($r['id']);
+                $lId = intval($r['lead_id']);
+                $r['linked_pos'] = $posByQuote[$qId] ?? [];
+                $r['po_count'] = count($r['linked_pos']);
+                $r['lead_linked_pos'] = $posByLead[$lId] ?? [];
+                $r['lead_po_count'] = count($r['lead_linked_pos']);
+            }
+            unset($r);
+        }
+
+        Response::success("Quotations fetched", $rows);
     }
 
     private function fetchQuotationData($id) {
@@ -132,7 +165,7 @@ class QuotationController {
                 $totalAmount,
                 $b['terms_conditions'] ?? "1. 50% advance on PO confirmation, balance prior to dispatch.\n2. Delivery time: 3 weeks.\n3. Standard 12 months warranty.",
                 $b['remarks'] ?? null,
-                !empty($b['created_by']) ? intval($b['created_by']) : 1
+                Response::resolveUserId($this->db, $b['created_by'] ?? null)
             ]);
             $quotationId = $this->db->lastInsertId();
 

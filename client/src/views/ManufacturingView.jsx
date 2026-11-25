@@ -109,12 +109,16 @@ export default function ManufacturingView({
     }
   };
 
-  const handleCheckMaterials = async (poId) => {
+  const handleCheckMaterials = async (poId, focusProductId = null) => {
     const idToUse = poId || selectedPOId;
     if (!idToUse) return;
     setLookupLoading(true);
     try {
-      const res = await api.checkMaterials({ po_id: idToUse });
+      const payload = { po_id: idToUse };
+      if (focusProductId) {
+        payload.product_id = focusProductId;
+      }
+      const res = await api.checkMaterials(payload);
       setLookupResult(res.data);
     } catch (err) {
       alert('Material lookup failed: ' + err.message);
@@ -160,6 +164,7 @@ export default function ManufacturingView({
 
       await api.createRequisition({
         po_id: selectedPOId,
+        requested_by: currentUser?.id || 1,
         items: allShortfall,
         remarks: requisitionRemarks || 'Sub-products & material shortfall requested for production fulfillment'
       });
@@ -185,22 +190,41 @@ export default function ManufacturingView({
     }
   };
 
-  const handleStartWorkOrder = async () => {
-    if (!selectedPOId || !lookupResult) return;
-    setLaunchingWO(true);
-    try {
-      const poDetails = await api.getPurchaseOrder(selectedPOId);
-      const firstItem = poDetails.data?.items?.[0];
-      if (!firstItem) {
-        alert('No items found in selected PO');
-        setLaunchingWO(false);
-        return;
-      }
+  const [launchingProductId, setLaunchingProductId] = useState(null);
 
+  const handleStartWorkOrder = async (targetItem = null) => {
+    if (!selectedPOId || !lookupResult) return;
+
+    const poItems = lookupResult.po_items || [];
+    const nextPendingItem =
+      targetItem ||
+      poItems.find((it) => !it.is_launched && it.is_bom_eligible) ||
+      poItems.find((it) => !it.is_launched);
+
+    if (!nextPendingItem) {
+      alert('All product line items on this PO already have active Work Orders launched. Use a specific product row below if you intentionally need an additional batch.');
+      return;
+    }
+
+    if (nextPendingItem.is_launched) {
+      const ok = window.confirm(
+        `"${nextPendingItem.name}" already has ${nextPendingItem.launched_work_orders?.length || 1} Work Order(s) (${nextPendingItem.launched_qty} / ${nextPendingItem.ordered_qty} ${nextPendingItem.uom}). Launch an additional batch?`
+      );
+      if (!ok) return;
+    }
+
+    const launchQty =
+      nextPendingItem.remaining_qty > 0
+        ? nextPendingItem.remaining_qty
+        : nextPendingItem.ordered_qty;
+
+    setLaunchingWO(true);
+    setLaunchingProductId(nextPendingItem.product_id);
+    try {
       const res = await api.startWorkOrder({
         po_id: selectedPOId,
-        product_id: firstItem.product_id,
-        target_quantity: firstItem.quantity,
+        product_id: nextPendingItem.product_id,
+        target_quantity: launchQty,
         operator_name: operatorName
       });
 
@@ -212,6 +236,7 @@ export default function ManufacturingView({
       alert('Failed to launch manufacturing: ' + err.message);
     } finally {
       setLaunchingWO(false);
+      setLaunchingProductId(null);
     }
   };
 
@@ -317,54 +342,204 @@ export default function ManufacturingView({
           ) : lookupResult ? (
             <div className="space-y-3.5">
               {/* Status Banner (Compact ShadCN style) */}
-              <div className={`p-3.5 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
-                lookupResult.material_status === 'full'
-                  ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
-                  : (lookupResult.material_status === 'partial'
-                      ? 'bg-amber-50/70 border-amber-200 text-amber-900'
-                      : 'bg-rose-50/70 border-rose-200 text-rose-900')
-              }`}>
-                <div className="flex items-center gap-2.5">
-                  {lookupResult.material_status === 'full' ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
-                  ) : (
-                    <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
-                  )}
-                  <div>
-                    <h3 className="text-xs font-bold">
-                      {lookupResult.material_status === 'full' && 'Fully Available in Warehouse — Eligible to Start Manufacturing!'}
-                      {lookupResult.material_status === 'partial' && 'Partially Available — Sub-Product or Material Shortfall Detected'}
-                      {lookupResult.material_status === 'not_found' && 'Not Found in Inventory — Full Procurement Required'}
-                    </h3>
-                    <p className="text-[11px] opacity-80 mt-0.5">
-                      {lookupResult.total_sub_assemblies_count > 0 && (
-                        <span className="mr-2">
-                          <strong>Sub-Products:</strong> {lookupResult.available_sub_assemblies_count} of {lookupResult.total_sub_assemblies_count} ready.
-                        </span>
+              {(() => {
+                const unlaunchedItems = (lookupResult.po_items || []).filter((it) => !it.is_launched);
+                const nextReadyItem = unlaunchedItems.find((it) => it.is_bom_eligible);
+                return (
+                  <div className={`p-3.5 rounded-lg border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    lookupResult.material_status === 'full'
+                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                      : (lookupResult.material_status === 'partial'
+                          ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                          : 'bg-rose-50/70 border-rose-200 text-rose-900')
+                  }`}>
+                    <div className="flex items-center gap-2.5">
+                      {lookupResult.material_status === 'full' ? (
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0" />
                       )}
-                      <span>
-                        <strong>Raw Materials:</strong> {lookupResult.available_materials_count} of {lookupResult.total_materials_count} in stock.
-                      </span>
-                      {lookupResult.total_shortfall_cost > 0 && (
-                        <span className="ml-2 font-semibold">
-                          Total Shortfall Cost: ₹{Number(lookupResult.total_shortfall_cost).toLocaleString()}
-                        </span>
-                      )}
-                    </p>
+                      <div>
+                        <h3 className="text-xs font-bold">
+                          {lookupResult.all_items_launched
+                            ? 'All PO Line Items Already Launched — Select any row below for BOM review or extra batch'
+                            : lookupResult.no_bom_required
+                            ? 'Ready to Launch Work Order (No Raw Material / Sub-Product BOM configured for selection)'
+                            : lookupResult.material_status === 'full'
+                            ? 'Fully Available in Warehouse — Eligible to Start Manufacturing!'
+                            : lookupResult.material_status === 'partial'
+                            ? 'Partially Available — Sub-Product or Material Shortfall Detected'
+                            : 'Not Found in Inventory — Full Procurement Required'}
+                        </h3>
+                        <p className="text-[11px] opacity-80 mt-0.5">
+                          {lookupResult.total_sub_assemblies_count > 0 && (
+                            <span className="mr-2">
+                              <strong>Sub-Products:</strong> {lookupResult.available_sub_assemblies_count} of {lookupResult.total_sub_assemblies_count} ready.
+                            </span>
+                          )}
+                          <span>
+                            <strong>Raw Materials:</strong> {lookupResult.available_materials_count} of {lookupResult.total_materials_count} in stock.
+                          </span>
+                          {lookupResult.total_shortfall_cost > 0 && (
+                            <span className="ml-2 font-semibold">
+                              Total Shortfall Cost: ₹{Number(lookupResult.total_shortfall_cost).toLocaleString()}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {nextReadyItem && hasPermission(currentUser, 'manufacturing', 'start') && (
+                      <button
+                        type="button"
+                        onClick={() => handleStartWorkOrder(nextReadyItem)}
+                        disabled={launchingWO}
+                        className="h-8 px-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-semibold text-xs shadow-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer disabled:opacity-60"
+                      >
+                        <Play className="h-3 w-3 fill-current" />
+                        {launchingWO
+                          ? 'Starting...'
+                          : `Start WO: ${nextReadyItem.sku} (${nextReadyItem.remaining_qty})`}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* SECTION 0: PO LINE ITEMS & PER-PRODUCT WORK ORDER LAUNCH */}
+              {lookupResult.po_items && lookupResult.po_items.length > 0 && (
+                <div className="bg-white rounded-lg border border-slate-200/90 shadow-xs overflow-hidden">
+                  <div className="px-3.5 py-2.5 bg-slate-50/70 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-900">
+                        PO Line Items &amp; Production Queue ({lookupResult.po_items.length} Product{lookupResult.po_items.length === 1 ? '' : 's'})
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        Launch individual 5-stage Work Orders per ordered product or inspect product-specific BOM availability.
+                      </p>
+                    </div>
+                    {lookupResult.focused_product_id && (
+                      <button
+                        type="button"
+                        onClick={() => handleCheckMaterials(selectedPOId, null)}
+                        className="h-7 px-2.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-md text-[11px] font-medium"
+                      >
+                        Show Combined Unlaunched BOM
+                      </button>
+                    )}
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-50/50 text-slate-600 font-semibold border-b border-slate-200/70 text-[11px]">
+                        <tr>
+                          <th className="px-3 py-2 w-8 text-center">#</th>
+                          <th className="px-3 py-2">Product</th>
+                          <th className="px-3 py-2 text-center">Ordered</th>
+                          <th className="px-3 py-2">Launched Work Orders</th>
+                          <th className="px-3 py-2 text-center">Remaining</th>
+                          <th className="px-3 py-2 text-center">BOM Ready</th>
+                          <th className="px-3 py-2 text-right">Launch / BOM</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {lookupResult.po_items.map((pi, idx) => {
+                          const isFocused = Number(lookupResult.focused_product_id) === Number(pi.product_id);
+                          const isLaunchingThis = launchingWO && Number(launchingProductId) === Number(pi.product_id);
+                          return (
+                            <tr key={pi.id || pi.product_id} className={isFocused ? 'bg-sky-50/40' : 'hover:bg-slate-50/50'}>
+                              <td className="px-3 py-2 text-center font-mono text-[11px] text-slate-400">{idx + 1}</td>
+                              <td className="px-3 py-2">
+                                <p className="font-semibold text-slate-900">{pi.name}</p>
+                                <span className="font-mono text-[10px] text-slate-500">{pi.sku}</span>
+                              </td>
+                              <td className="px-3 py-2 text-center font-medium text-slate-800 whitespace-nowrap">
+                                {pi.ordered_qty} {pi.uom}
+                              </td>
+                              <td className="px-3 py-2">
+                                {pi.launched_work_orders && pi.launched_work_orders.length > 0 ? (
+                                  <div className="flex flex-wrap items-center gap-1">
+                                    {pi.launched_work_orders.map((w) => (
+                                      <button
+                                        key={w.id}
+                                        type="button"
+                                        onClick={() => onViewWorkOrder && onViewWorkOrder(w.id)}
+                                        className="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-sky-50 text-sky-700 hover:bg-sky-100 border border-sky-200 cursor-pointer"
+                                        title={`Open ${w.work_order_number} (${w.target_quantity} ${pi.uom} • ${w.status})`}
+                                      >
+                                        {w.work_order_number} ({w.target_quantity})
+                                      </button>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400">Not launched yet</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap">
+                                {pi.remaining_qty > 0 ? (
+                                  <span className="font-semibold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 text-[10px]">
+                                    {pi.remaining_qty} {pi.uom}
+                                  </span>
+                                ) : (
+                                  <span className="font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 text-[10px]">
+                                    0 (Covered)
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-center whitespace-nowrap">
+                                {pi.no_bom_required ? (
+                                  <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
+                                    Direct Ready
+                                  </span>
+                                ) : pi.is_bom_eligible ? (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    In Stock
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-rose-50 text-rose-700 border border-rose-200">
+                                    {pi.shortfall_count} Shortfall
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-right space-x-1.5 whitespace-nowrap">
+                                <button
+                                  type="button"
+                                  onClick={() => handleCheckMaterials(selectedPOId, pi.product_id)}
+                                  className={`h-7 px-2 rounded-md text-[11px] font-medium border ${
+                                    isFocused
+                                      ? 'bg-sky-600 text-white border-sky-600'
+                                      : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  Inspect BOM
+                                </button>
+                                {hasPermission(currentUser, 'manufacturing', 'start') && (
+                                  <button
+                                    type="button"
+                                    disabled={launchingWO || !pi.is_bom_eligible}
+                                    onClick={() => handleStartWorkOrder(pi)}
+                                    className={`h-7 px-2.5 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 disabled:opacity-45 disabled:cursor-not-allowed ${
+                                      pi.is_launched
+                                        ? 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                                    }`}
+                                  >
+                                    <Play className="h-3 w-3 fill-current" />
+                                    {isLaunchingThis
+                                      ? 'Starting...'
+                                      : pi.is_launched
+                                      ? `+ Batch (${pi.ordered_qty})`
+                                      : `Start WO (${pi.remaining_qty})`}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-
-                {lookupResult.is_eligible_for_manufacturing && hasPermission(currentUser, 'manufacturing', 'start') && (
-                  <button
-                    onClick={handleStartWorkOrder}
-                    disabled={launchingWO}
-                    className="h-8 px-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-semibold text-xs shadow-xs flex items-center gap-1.5 whitespace-nowrap"
-                  >
-                    <Play className="h-3 w-3 fill-current" />
-                    {launchingWO ? 'Starting...' : 'Start 5-Stage Work Order'}
-                  </button>
-                )}
-              </div>
+              )}
 
               {/* SECTION 1: SUB-PRODUCTS / SUB-ASSEMBLIES (Multi-Level BOM) */}
               {lookupResult.sub_assemblies && lookupResult.sub_assemblies.length > 0 && (
@@ -692,11 +867,16 @@ export default function ManufacturingView({
             workOrders.map((wo) => (
               <div key={wo.id} className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     <span className="font-mono text-[11px] font-semibold text-slate-900 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
                       {wo.work_order_number}
                     </span>
                     <span className="font-semibold text-slate-900 text-xs">{wo.product_name}</span>
+                    {Number(wo.rework_components_count || 0) > 0 && (
+                      <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded bg-amber-50 text-amber-800 border border-amber-200">
+                        {wo.rework_components_count} Rework Held
+                      </span>
+                    )}
                   </div>
                   <p className="text-[11px] text-slate-500 mt-0.5">
                     PO: {wo.po_number} • Target: {wo.target_quantity} {wo.uom}

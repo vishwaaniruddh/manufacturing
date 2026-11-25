@@ -17,8 +17,16 @@ import {
 import { hasPermission } from '../utils/rbac';
 import Pagination, { usePagination } from '../components/Pagination';
 import { exportToCsv } from '../utils/exportCsv';
+import LinkedPOBadges from '../components/LinkedPOBadges';
 
-export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAudit, onOpenLeadEngine }) {
+export default function LeadsView({
+  currentUser,
+  onSelectForQuotation,
+  onViewQuotation,
+  onViewPO,
+  onOpenAudit,
+  onOpenLeadEngine
+}) {
   const [leads, setLeads] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -236,27 +244,33 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
               <span>Total Records: <strong className="text-slate-800">{filteredLeads.length}</strong></span>
               <span>Page {leadsPagination.currentPage} of {leadsPagination.totalPages}</span>
             </div>
-            <div className="overflow-x-auto">
+            <div
+              tabIndex={0}
+              role="region"
+              aria-label="Leads, linked quotations, and purchase orders table"
+              className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+            >
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50/80 text-slate-600 font-semibold border-b border-slate-200/80">
                 <tr>
-                  <th className="px-3 py-2.5 w-10 text-center">#</th>
-                  <th className="px-3.5 py-2.5 min-w-[290px] max-w-[360px] whitespace-nowrap">Lead # & Title</th>
-                  <th className="px-3.5 py-2.5">Customer</th>
-                  <th className="px-3.5 py-2.5">Est. Value</th>
-                  <th className="px-3.5 py-2.5">Source & Date</th>
-                  <th className="px-3.5 py-2.5">Status</th>
-                  <th className="px-3.5 py-2.5 text-right">Actions</th>
+                  <th scope="col" className="px-2.5 py-2.5 w-8 text-center">#</th>
+                  <th scope="col" className="px-2.5 py-2.5 min-w-[220px] max-w-[300px] whitespace-nowrap">Lead # & Title</th>
+                  <th scope="col" className="px-2.5 py-2.5">Customer</th>
+                  <th scope="col" className="px-2.5 py-2.5">Est. Value</th>
+                  <th scope="col" className="px-2.5 py-2.5">Source & Date</th>
+                  <th scope="col" className="px-2.5 py-2.5">Status</th>
+                  <th scope="col" className="px-2.5 py-2.5">Quotes & POs</th>
+                  <th scope="col" className="px-2.5 py-2.5 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {leadsPagination.paginatedItems.map((item, idx) => (
                   <tr key={item.id} className="hover:bg-slate-50/60 transition-colors">
-                    <td className="px-3 py-2.5 text-center font-mono text-[11px] text-slate-400">
+                    <td className="px-2.5 py-2.5 text-center font-mono text-[11px] text-slate-400">
                       {leadsPagination.startIndex + idx + 1}
                     </td>
                     
-                    <td className="px-3.5 py-2.5 min-w-[290px] max-w-[360px]">
+                    <td className="px-2.5 py-2.5 min-w-[220px] max-w-[300px]">
                       <span className="inline-block whitespace-nowrap font-mono text-[11px] font-semibold text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200">
                         {item.lead_number}
                       </span>
@@ -274,29 +288,29 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                         })()}
                       </p>
                       {item.requirement_details && (
-                        <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[340px]">
+                        <p className="text-[11px] text-slate-500 line-clamp-1 max-w-[280px]">
                           {item.requirement_details}
                         </p>
                       )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       <p className="font-medium text-slate-800">{item.customer_name}</p>
                       <p className="text-[10px] text-slate-400 font-mono">{item.customer_phone}</p>
                     </td>
 
-                    <td className="px-3.5 py-2.5 font-semibold text-slate-900 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 font-semibold text-slate-900 whitespace-nowrap">
                       ₹{Number(item.estimated_value).toLocaleString()}
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       <span className="text-slate-600">{item.source}</span>
                       <p className="text-[10px] text-slate-400">
                         {new Date(item.created_at).toLocaleDateString()}
                       </p>
                     </td>
 
-                    <td className="px-3.5 py-2.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 whitespace-nowrap">
                       {item.status === 'approved' && (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                           <CheckCircle2 className="h-3 w-3" /> Approved
@@ -313,13 +327,36 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                         </span>
                       )}
                       {item.remarks && (
-                        <p className="text-[10px] text-slate-400 italic max-w-xs truncate mt-0.5">
+                        <p className="text-[10px] text-slate-400 italic max-w-[160px] truncate mt-0.5">
                           "{item.remarks}"
                         </p>
                       )}
                     </td>
 
-                    <td className="px-3.5 py-2.5 text-right space-x-1.5 whitespace-nowrap">
+                    <td className="px-2.5 py-2.5 space-y-1.5">
+                      {(item.linked_quotations || []).length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          {item.linked_quotations.map((q) => (
+                            <button
+                              key={q.id}
+                              type="button"
+                              onClick={() => onViewQuotation && onViewQuotation(q.id)}
+                              title={`Open ${q.quotation_number} (₹${Number(q.total_amount).toLocaleString()} • ${q.status})`}
+                              className="px-1.5 py-0.5 rounded font-mono text-[10px] font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-200 transition-colors cursor-pointer"
+                            >
+                              {q.quotation_number}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      <LinkedPOBadges
+                        pos={item.linked_pos || []}
+                        onViewPO={onViewPO}
+                        emptyLabel="No POs"
+                      />
+                    </td>
+
+                    <td className="px-2.5 py-2.5 text-right space-x-1 whitespace-nowrap">
                       <button
                         type="button"
                         disabled={item.status !== 'pending' || !hasPermission(currentUser, 'leads', 'approve')}
@@ -327,7 +364,7 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                           setShowActionModal({ type: 'approve', lead: item });
                           setActionRemarks('');
                         }}
-                        className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
+                        className="h-7 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-emerald-600"
                       >
                         Approve
                       </button>
@@ -339,7 +376,7 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                           setShowActionModal({ type: 'reject', lead: item });
                           setActionRemarks('');
                         }}
-                        className="h-7 px-2.5 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
+                        className="h-7 px-2 bg-white border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-md font-medium text-[11px] transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white"
                       >
                         Reject
                       </button>
@@ -348,7 +385,7 @@ export default function LeadsView({ currentUser, onSelectForQuotation, onOpenAud
                         type="button"
                         disabled={item.status !== 'approved' || !hasPermission(currentUser, 'quotations', 'create')}
                         onClick={() => onSelectForQuotation(item)}
-                        className="h-7 px-2.5 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
+                        className="h-7 px-2 bg-slate-900 hover:bg-slate-800 text-slate-50 rounded-md font-medium text-[11px] inline-flex items-center gap-1 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-slate-900"
                       >
                         + Quote <ArrowRight className="h-3 w-3" />
                       </button>
